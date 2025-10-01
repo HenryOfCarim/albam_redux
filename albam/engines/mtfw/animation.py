@@ -110,8 +110,8 @@ def load_lmt(file_list_item, context):
             item.copy_custom_properties_from(track)
             item.raw_data = track.data
             # print("Buffer type: ", track.buffer_type, "Usage:", USAGE[track.usage])
+            bounds = None
             if lmt_ver > 51:
-                bounds = None
                 bounds_body = track.bounds
                 if bounds_body:
                     b_item = item.track_bounds.add()
@@ -136,20 +136,20 @@ def load_lmt(file_list_item, context):
 
             TRACK_MODE = USAGE[track.usage]
             if track.len_data > 0:
-                if track.buffer_type == 6:
-                    # TRACK_MODE = "rotation_quaternion"  # TODO: improve naming
-                    decoded_frames = decode_type_6(track.data)
-                elif track.buffer_type == 4:
-                    # TRACK_MODE = "rotation_quaternion"
-                    decoded_frames = decode_type_4(track.data, lmt_ver, bounds)
+                if track.buffer_type == 1:
+                    # Location
+                    decoded_frames = decode_type_1(track.data)
                 elif track.buffer_type == 2:
                     # TRACK_MODE = "location"
                     decoded_frames = decode_type_2(track.data)
-                    # decoded_frames = _parent_space_to_local(decoded_frames, armature, bone_index)
+                elif track.buffer_type == 4:
+                    # TRACK_MODE = "rotation_quaternion"
+                    decoded_frames = decode_type_4(track.data, lmt_ver, bounds)
+                elif track.buffer_type == 6:
+                    decoded_frames = decode_type_6(track.data)
                 elif track.buffer_type == 9:
                     # TRACK_MODE = "location"
                     decoded_frames = decode_type_9(track.data)
-                    # decoded_frames = _parent_space_to_local(decoded_frames, armature, bone_index)
 
                 else:
                     # TODO: print statistics of missing tracks
@@ -246,12 +246,13 @@ def _create_bone_mapping(armature_obj):
 
 
 class LMTUniKey:
-    def __init__(self):
-        self.value = [0.0, 0.0, 0.0]
-        self.intangenttype = "custom"
-        self.outtangenttype = "custom"
-        self.intangent = [0.0, 0.0, 0.0]
-        self.outtangent = [0.0, 0.0, 0.0]
+    def __init__(self, value=None, time=0, intangenttype='linear', outtangenttype='linear', intangent=None, outtangent=None):
+        self.value = value
+        self.time = time
+        self.intangenttype = intangenttype
+        self.outtangenttype = outtangenttype
+        self.intangent = intangent or [0, 0, 0]
+        self.outtangent = outtangent or [0, 0, 0]
 
 
 class LMTQuadraticVector3:
@@ -295,6 +296,54 @@ class LMTQuadraticVector3:
             self.frame.outtangent = [x * (0.19 / self.relframe) for x in self.frame.outtangent]
             self.nextframeintangent = [x * (-0.19 / self.relframe) for x in self.nextframeintangent]
         self.size = addcount
+
+
+class LMTQuatized32Quat:
+    def __init__(self, data, bounds):
+        self.frame = LMTUniKey(value=[1, 0, 0, 0])  # quat(1) аналогічно [1,0,0,0]
+        self.relframe = 0
+        self.size = 4
+        self.bounds = bounds
+        self.bitmask = 0x7f
+        self.decoded_frames = []
+
+        self._read(data)
+
+    def decode(self, data):
+        for i in range(len(data)/self.size):
+            chunk = data[i * self.size: (i + 1) * self.size]
+            if len(chunk) < self.size:
+                break
+            self._read(io.BytesIO(chunk))
+            self.decoded_frames.append(self.frame.value)
+
+    def _read(self, fl):
+        ivalue = self.read_long(fl)
+
+        # Unpack quaternion
+        w = ivalue & self.bitmask
+        z = (ivalue >> 7) & self.bitmask
+        y = (ivalue >> 14) & self.bitmask
+        x = (ivalue >> 21) & self.bitmask
+        self.relframe = (ivalue & 0xf0000000) >> 28
+
+        w = self.dequantize(w)
+        x = self.dequantize(x)
+        y = self.dequantize(y)
+        z = self.dequantize(z)
+
+        self.frame.value = [x, y, z, w]
+        # Interpolation
+        if self.bounds:
+            self.frame.value = self.bounds.lerpq(self.frame.value)
+
+    def dequantize(self, value):
+        return (value - 8) * 0.0089285718
+
+    @staticmethod
+    def read_long(fl):
+        # Little-endian unsigned int
+        return struct.unpack('<I', fl.read(4))[0]
 
 
 class FrameQuat4_14(Structure):
@@ -346,16 +395,15 @@ def decode_type_1(data):
 
 
 # LMTVec3Frame12 T_VECTOR3_CONST = 0x2,
-def decode_type_2(data, bound):
+def decode_type_2(data):
     decoded_frames = []
     CHUNK_SIZE = 12
 
     for start in range(0, len(data), CHUNK_SIZE):
         chunk = data[start: start + CHUNK_SIZE]
         u = struct.unpack("fff", chunk)
-        frame = (u[0] / 100, u[1] / 100, u[2] / 100)
-        frame = bound.lerp3(frame)
-        decoded_frames.append(frame)
+        floats = (u[0] / 100, u[1] / 100, u[2] / 100)
+        decoded_frames.append(floats)
     return decoded_frames
 
 
