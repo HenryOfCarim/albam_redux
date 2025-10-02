@@ -30,42 +30,56 @@ def test_lmt(parsed_lmt_from_arc):
             assert tr.buffer_type in SUPPORTED_BUFFER_TYPES
             if tr.buffer_type == 1:
                 assert tr.usage in LOCATION or tr.usage in SCALE
+                assert tr.len_data == 0
             elif tr.buffer_type == 2:
                 if lmt.version == 51:
                     assert tr.usage in SCALE or tr.usage in LOCATION  # RE5
                 else:
                     assert tr.usage in ROTATION
+                    assert tr.len_data % 12 == 0
             elif tr.buffer_type == 3:
                 assert tr.usage in SCALE or tr.usage in LOCATION
+                assert tr.len_data % 16 == 0
             elif tr.buffer_type == 4:
                 if lmt.version == 51:
                     assert tr.usage in ROTATION  # RE5
+                    assert tr.len_data % 12 == 0
                 else:
                     assert tr.usage in SCALE or tr.usage in LOCATION
-                    assert tr.ofs_bounds.ofs_buffer != 0
+                    assert tr.ofs_bounds != 0
+                    assert tr.len_data % 8 == 0
             elif tr.buffer_type == 5:
                 assert tr.usage in SCALE or tr.usage in LOCATION
-                assert tr.ofs_bounds.ofs_buffer != 0
+                assert tr.ofs_bounds != 0
+                assert tr.len_data % 4 == 0
             elif tr.buffer_type == 6:
                 assert tr.usage in ROTATION
+                assert tr.len_data % 8 == 0
             elif tr.buffer_type == 7:
                 assert tr.usage in ROTATION
-                assert tr.ofs_bounds.ofs_buffer != 0
+                assert tr.ofs_bounds != 0
+                assert tr.len_data % 4 == 0
             elif tr.buffer_type == 9:
                 assert tr.usage in SCALE or tr.usage in LOCATION
+                assert tr.len_data % 12 == 0
             elif tr.buffer_type == 11:
                 assert tr.usage in ROTATION
-                assert tr.ofs_bounds.ofs_buffer != 0
+                assert tr.ofs_bounds != 0
+                assert tr.len_data % 4 == 0
             elif tr.buffer_type == 12:
                 assert tr.usage in ROTATION
-                assert tr.ofs_bounds.ofs_buffer != 0
+                assert tr.ofs_bounds != 0
+                assert tr.len_data % 4 == 0
             elif tr.buffer_type == 13:
                 assert tr.usage in ROTATION
-                assert tr.ofs_bounds.ofs_buffer != 0
+                assert tr.ofs_bounds != 0
+                assert tr.len_data % 4 == 0
             elif tr.buffer_type == 14:
                 assert tr.usage in ROTATION
-                assert tr.ofs_bounds.ofs_buffer != 0
+                assert tr.ofs_bounds != 0
+                assert tr.len_data % 6 == 0
             elif tr.buffer_type == 15:
                 assert tr.usage in ROTATION
-                assert tr.ofs_bounds.ofs_buffer != 0
+                assert tr.ofs_bounds != 0
+                assert tr.len_data % 5 == 0
 

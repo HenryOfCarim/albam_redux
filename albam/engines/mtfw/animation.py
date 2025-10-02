@@ -310,6 +310,7 @@ class LMTKeyFrames:
 
 
 class LMTVec3:
+    """No actual keyframe data, probably uses Reference data"""
     def __init__(self):
         self.frame = LMTUniKey()
         self.size = 12
@@ -587,7 +588,7 @@ class LMTQuatized11Quat():
 class LMTQuatized9Quat():
     def __init__(self):
         self.frame = LMTUniKey()
-        self.size = 8
+        self.size = 5
         self.bitmask = 0x1ffff
         self.decoded_frames = []
 
