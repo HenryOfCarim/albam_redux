@@ -7,7 +7,7 @@ from albam.vfs import VirtualFileData
 
 import bpy
 from kaitaistruct import KaitaiStream
-from mathutils import Matrix, Quaternion
+from mathutils import Matrix, Vector, Quaternion
 
 from albam.registry import blender_registry
 from .structs.lmt import Lmt
@@ -136,7 +136,8 @@ def load_lmt(file_list_item, context):
             if track.bone_index in HACKY_BONE_INDICES_IK_FOOT:
                 bone_index = _get_or_create_ik_bone(armature, track.bone_index, bone_index, mapping)
 
-            TRACK_MODE = USAGE[track.usage]
+            track_type = USAGE[track.usage]
+            keyframes.track_type = USAGE[track.usage]
             if track.len_data > 0:
                 keyframes.decode_framedata(lmt_ver, track.buffer_type, track.data)
                 if track.buffer_type == 1:
@@ -167,7 +168,7 @@ def load_lmt(file_list_item, context):
 
             group_name = str(bone_index)
             group = action.groups.get(group_name) or action.groups.new(group_name)
-            data_path = f"pose.bones[\"{bone_index}\"].{TRACK_MODE}"
+            data_path = f"pose.bones[\"{bone_index}\"].{track_type}"
             num_curv = len(decoded_frames[0])
             try:
                 curves = [action.fcurves.new(data_path=data_path, index=i) for i in range(num_curv)]
@@ -249,7 +250,11 @@ def _create_bone_mapping(armature_obj):
 
 class LMTUniKey:
     def __init__(self):
-        self.value = [0.0, 0.0, 0.0, 0.0]
+        self.value = {
+            "location": Vector((0.0, 0.0, 0.0)),
+            "rotation": Quaternion((1.0, 0.0, 0.0, 0.0)),
+            "scale": Vector((1.0, 1.0, 1.0))
+        }
         self.intangenttype = "custom"
         self.outtangenttype = "custom"
         self.intangent = [0.0, 0.0]
@@ -262,6 +267,7 @@ class LMTKeyFrames:
         self.frame = LMTUniKey()
         self.bounds = None
         self.size = 0
+        self.track_type = ""
         self.decoded_frames = []
 
     def decode_framedata(self, version, key_type, data):
@@ -310,7 +316,7 @@ class LMTKeyFrames:
 
 
 class LMTVec3:
-    """No actual keyframe data, probably uses Reference data"""
+    # No actual keyframe data tests found, probably uses Reference data
     def __init__(self):
         self.frame = LMTUniKey()
         self.size = 12
@@ -319,7 +325,7 @@ class LMTVec3:
     def decode(self, data):
         u = struct.unpack("fff", data)
         frame = (u[0] / 100, u[1] / 100, u[2] / 100)
-        self.frame.value = frame
+        self.frame.value["location"] = frame
         self.decoded_frames.append(frame)
         return self.decoded_frames
 
@@ -331,11 +337,11 @@ class LMTVec3Frame12:
         self.decoded_frames = []
 
     def decode(self, data):
-        # for start in range(0, len(data), self.size):
-        #    chunk = data[start: start + self.size]
-        #    u = struct.unpack("fff", chunk)
-        #    frame = (u[0] / 100, u[1] / 100, u[2] / 100)
-        #    self.decoded_frames.append(frame)
+        for start in range(0, len(data), self.size):
+            chunk = data[start: start + self.size]
+            u = struct.unpack("fff", chunk)
+            self.frame.value["location"] = (u[0] / 100, u[1] / 100, u[2] / 100)
+            self.decoded_frames.append(self.frame)
         return self.decoded_frames
 
 
@@ -349,8 +355,8 @@ class LMTVec3Frame16:
         for start in range(0, len(data), self.size):
             chunk = data[start: start + self.size]
             u = struct.unpack("fffI", chunk)
-            frame = (u[0] / 100, u[1] / 100, u[2] / 100)
-            self.decoded_frames.append(frame)
+            self.frame.value["location"] = (u[0] / 100, u[1] / 100, u[2] / 100)
+            self.decoded_frames.append(self.frame)
             duration = u[3]
             self.decoded_frames.extend([None] * (duration - 1))
         return self.decoded_frames
@@ -366,11 +372,18 @@ class LMTQuatized16Vec3:
         for start in range(0, len(data), self.size):
             chunk = data[start: start + self.size]
             u = struct.unpack("HHHH", chunk)
-            frame = (u[0] / 100, u[1] / 100, u[2] / 100)
-            frame = bounds.lerp3(frame)
+            frame = self.read16(self, u)
+            frame = (frame[0] / 100, frame[1] / 100, frame[2] / 100)
+            self.frame.value["location"] = bounds.lerp3(frame)
             self.decoded_frames.append(frame)
             duration = u[3]
             self.decoded_frames.extend([None] * (duration - 1))
+
+    def read16(self, keyframes):
+        dec_frame = []
+        for i in range(3):
+            dec_frame.append(keyframes[i]/65535.0)
+        return dec_frame
 
 
 class LMTQuat3Frame():
@@ -384,7 +397,8 @@ class LMTQuat3Frame():
             chunk = data[start: start + self.size]
             u = struct.unpack("fff", chunk)
             w = math.sqrt(1.0 - u[0]*u[0] - u[1]*u[1] - u[2]*u[2])
-            self.decoded_frames.append((w, u[0], u[1], u[2]))
+            self.frame.value["rotation"] = (w, u[0], u[1], u[2])
+            self.decoded_frames.append(self.frame)
 
 
 class LMTQuatized8Vec3():
@@ -405,47 +419,49 @@ class LMTQuatized8Vec3():
         return self.decoded_frames
 
 
-class LMTQuadraticVector3():
-    def __init__(self, chunk):
+class LMTQuadraticVector3():  # type 5 for games older than re5
+    def __init__(self):
         self.frame = LMTUniKey()
-        self.relframe = 0
+        self.duration = 0
         self.nextframeintangent = [0.0, 0.0, 0.0]
-        self.size = 0
+        self.size = 0  # size is variable, probably
+        self.decoded_frames = []
 
-        # Reading of the data
-        addcount = int.from_bytes(chunk.read(1), "little")
-        flags = int.from_bytes(chunk.read(1), "little")
+        def decode(self, data):
+            # Reading of the data
+            addcount = int.from_bytes(data.read(1), "little")
+            flags = int.from_bytes(data.read(1), "little")
 
-        self.relframe = struct.unpack("<H", chunk.read(2))[0]
-        self.frame.value = list(struct.unpack("<3f", chunk.read(12)))
-        float_fmt = "<f"
+            self.duration = struct.unpack("<H", data.read(2))[0]
+            self.frame.value = list(struct.unpack("<3f", data.read(12)))
+            float_fmt = "<f"
 
-        # Default tangents = 0
-        self.frame.outtangent = [0.0, 0.0, 0.0]
-        self.nextframeintangent = [0.0, 0.0, 0.0]
+            # Default tangents = 0
+            self.frame.outtangent = [0.0, 0.0, 0.0]
+            self.nextframeintangent = [0.0, 0.0, 0.0]
 
-        # Read flags
-        for b in range(1, 9):
-            if flags & (1 << (b - 1)):
-                if b == 1:
-                    self.frame.outtangent[0] = struct.unpack(float_fmt, chunk.read(4))[0]
-                elif b == 2:
-                    self.frame.outtangent[1] = struct.unpack(float_fmt, chunk.read(4))[0]
-                elif b == 3:
-                    self.frame.outtangent[2] = struct.unpack(float_fmt, chunk.read(4))[0]
-                elif b == 4:
-                    self.nextframeintangent[0] = struct.unpack(float_fmt, chunk.read(4))[0]
-                elif b == 5:
-                    self.nextframeintangent[1] = struct.unpack(float_fmt, chunk.read(4))[0]
-                elif b == 6:
-                    self.nextframeintangent[2] = struct.unpack(float_fmt, chunk.read(4))[0]
-                # b==7,8 not used
+            # Read flags
+            for b in range(1, 9):
+                if flags & (1 << (b - 1)):
+                    if b == 1:
+                        self.frame.outtangent[0] = struct.unpack(float_fmt, data.read(4))[0]
+                    elif b == 2:
+                        self.frame.outtangent[1] = struct.unpack(float_fmt, data.read(4))[0]
+                    elif b == 3:
+                        self.frame.outtangent[2] = struct.unpack(float_fmt, data.read(4))[0]
+                    elif b == 4:
+                        self.nextframeintangent[0] = struct.unpack(float_fmt, data.read(4))[0]
+                    elif b == 5:
+                        self.nextframeintangent[1] = struct.unpack(float_fmt, data.read(4))[0]
+                    elif b == 6:
+                        self.nextframeintangent[2] = struct.unpack(float_fmt, data.read(4))[0]
+                    # b==7,8 not used
 
-        # Scale tangents
-        if self.relframe != 0:
-            self.frame.outtangent = [x * (0.19 / self.relframe) for x in self.frame.outtangent]
-            self.nextframeintangent = [x * (-0.19 / self.relframe) for x in self.nextframeintangent]
-        self.size = addcount
+            # Scale tangents
+            if self.duration != 0:
+                self.frame.outtangent = [x * (0.19 / self.duration) for x in self.frame.outtangent]
+                self.nextframeintangent = [x * (-0.19 / self.duration) for x in self.nextframeintangent]
+            self.size = addcount
 
 
 class LMTQuatFramev14():
@@ -465,7 +481,8 @@ class LMTQuatFramev14():
         for start in range(0, len(data), self.size):
             chunk = data[start: start + self.size]
             u = struct.unpack("II", chunk)
-            print("LMTQuatFramev14 not implemented")
+            self.frame.value['rotation'] = Quaternion((1.0, 0.0, 0.0, 0.0))
+            self.decoded_frames.append(self.frame.value)
         return self.decoded_frames
 
 
