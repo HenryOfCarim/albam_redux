@@ -69,6 +69,11 @@ KEYFRAME_TYPES_67.update({
     5: Lmt.Quatized8Vec3,
 })
 
+KEYFRAME_TYPES = {
+    51: KEYFRAME_TYPES_51,
+    67: KEYFRAME_TYPES_67
+}
+
 
 class LMTKeyframeBounds:
     def __init__(self, bound):
@@ -93,8 +98,10 @@ class LMTKeyframeBounds:
             self.offset[3] + fraction[3] * self.addin[3],
         ]
 
-
+@blender_registry.register_import_function(app_id="re0", extension='lmt', file_category="ANIMATION")
+@blender_registry.register_import_function(app_id="re1", extension='lmt', file_category="ANIMATION")
 @blender_registry.register_import_function(app_id="re5", extension='lmt', file_category="ANIMATION")
+@blender_registry.register_import_function(app_id="re6", extension='lmt', file_category="ANIMATION")
 @blender_registry.register_import_function(app_id="rev1", extension='lmt', file_category="ANIMATION")
 @blender_registry.register_import_function(app_id="rev2", extension='lmt', file_category="ANIMATION")
 def load_lmt(file_list_item, context):
@@ -160,6 +167,7 @@ def load_lmt(file_list_item, context):
 
             track_type = USAGE[track.usage]
             keyframes.track_type = USAGE[track.usage]
+            decoded_frames = []
             if track.len_data > 0:
                 keyframes.decode_framedata(lmt_ver, track.buffer_type, track.data)
                 if track.buffer_type == 1:
@@ -181,9 +189,17 @@ def load_lmt(file_list_item, context):
                     print("Unknown buffer_type, skipping", track.buffer_type)
                     continue
             else:
+                frame = None
+                rd = track.reference_data
+                if track_type == "location":
+                    frame = Vector((rd[0], rd[1], rd[2]))
+                    print("location")
+                else:
+                    frame = Quaternion((rd[0], rd[1], rd[2], rd[3]))
+                    print("rotation")
+                keyframes.decoded_frames.append(frame)
+            if not decoded_frames:
                 continue
-                ref_data = track.reference_data
-                decoded_frames = [ref_data]
 
             if track.usage > 2:
                 decoded_frames = _parent_space_to_local(decoded_frames, armature, bone_index)
@@ -291,7 +307,7 @@ class LMTKeyFrames:
         self.decoded_frames = []
 
     def decode_framedata(self, version, key_type, data):
-        kfcls = KEYFRAME_TYPES_51.get(key_type, None)
+        kfcls = KEYFRAME_TYPES[version].get(key_type, None)
         if kfcls is None:
             print("Unknown keyframe type:", key_type)
             return
@@ -314,7 +330,7 @@ class LMTKeyFrames:
                 self.decoded_frames.extend([None] * (duration - 1))
 
     def dequantaize(self, kf, type):
-        dkf = Quaternion(0.0, 0.0, 0.0, 0.0)
+        dkf = Quaternion((0.0, 0.0, 0.0, 0.0))
         if type in (11, 12, 13):
             if getattr(kf, "x", None):
                 dkf.x = kf.x * 0.000061039  # 1/16383
@@ -325,20 +341,20 @@ class LMTKeyFrames:
             if getattr(kf, "w", None):
                 dkf.w = kf.w * 0.000061039
         elif type == 7:
+            dkf.w = (kf.w - 8) * 0.0089285718
             dkf.x = (kf.x - 8) * 0.0089285718
             dkf.y = (kf.y - 8) * 0.0089285718
             dkf.z = (kf.z - 8) * 0.0089285718
-            dkf.w = (kf.w - 8) * 0.0089285718
         elif type == 6:
             bitmask = 16383
+            if kf.w > bitmask * 0.5:
+                dkf.w = - (bitmask - kf.w)
             if kf.x > bitmask * 0.5:
                 dkf.x = - (bitmask - kf.x)
             if kf.y > bitmask * 0.5:
                 dkf.y = - (bitmask - kf.y)
             if kf.z > bitmask * 0.5:
                 dkf.z = - (bitmask - kf.z)
-            if kf.w > bitmask * 0.5:
-                dkf.w = - (bitmask - kf.w)
             dkf.x *= 0.000244156  # 1/4096
             dkf.y *= 0.000244156
             dkf.z *= 0.000244156
@@ -347,17 +363,21 @@ class LMTKeyFrames:
 
     def restore_w(self, kf):
         w = math.sqrt(1.0 - kf.x**2 - kf.y**2 - kf.z**2)
-        frame = Quaternion((kf.x, kf.y, kf.z, w))
+        frame = Quaternion((w, kf.x, kf.y, kf.z))
         return frame
 
     def to_quat(self, kf):
         return Quaternion((kf.w, kf.x, kf.y, kf.z))
 
-    def to_vec3(self, kf):
-        return Vector((kf.x, kf.y, kf.z))
-
-    def scale_values(self, kf):
+    def scale_vector(self, kf):
+        kf.x = kf.x / 100
+        kf.y = kf.y / 100
+        kf.z = kf.z / 100
         return kf
+
+    def to_vec3(self, kf):
+        kf = self.scale_vector(kf)
+        return Vector((kf.x, kf.y, kf.z))
 
 
 class LMTVec3:
@@ -405,6 +425,7 @@ class LMTVec3Frame16:
             duration = u[3]
             self.decoded_frames.extend([None] * (duration - 1))
         return self.decoded_frames
+
 
 class LMTQuatized16Vec3:
     def __init__(self):
