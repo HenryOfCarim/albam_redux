@@ -59,8 +59,15 @@ KEYFRAME_TYPES_51 = {
     11: Lmt.XwQuat,
     12: Lmt.YwQuat,
     13: Lmt.ZwQuat,
-    14: Lmt.Quatized11Quat
+    14: Lmt.Quatized11Quat,
+    15: Lmt.Quatized9Quat,
 }
+
+KEYFRAME_TYPES_67 = KEYFRAME_TYPES_51.copy()
+KEYFRAME_TYPES_67.update({
+    4: Lmt.Quatized16Vec3,
+    5: Lmt.Quatized8Vec3,
+})
 
 
 class LMTKeyframeBounds:
@@ -278,7 +285,6 @@ class LMTUniKey:
 class LMTKeyFrames:
     def __init__(self):
         self.version = 0
-        self.frame = LMTUniKey()
         self.bounds = None
         self.size = 0
         self.track_type = ""
@@ -289,43 +295,55 @@ class LMTKeyFrames:
         if kfcls is None:
             print("Unknown keyframe type:", key_type)
             return
-        keyframe = kfcls()
+        keyframe = kfcls()  # hack to get the size before reading
         for start in range(0, len(data), keyframe.size_):
             chunk = data[start: start + keyframe.size_]
             frame = kfcls(KaitaiStream(io.BytesIO(chunk)))
             frame._read()
-            print(keyframe)
+            duration = getattr(frame, "duration", None)
+            if self.track_type == "rotation":
+                if key_type == 4 and self.version < 55:  # Quat3Frame
+                    self.decoded_frames.append(self.restore_w(frame))
+                elif key_type in (11, 12, 13, 14, 15):
+                    self.dequantaize(frame, key_type)
+                else:
+                    self.decoded_frames.append(self.to_quat(frame))
+            else:
+                self.decoded_frames.append(self.to_vec3(frame))
+            if duration:
+                self.decoded_frames.extend([None] * (duration - 1))
 
-    def dequantaize(self, keyframes, type):
-        if type == "XWQuat":
-            if getattr(keyframes, "x", None):
-                keyframes.x = keyframes.x * 0.000061039  # 1/16383
-            if getattr(keyframes, "y", None):
-                keyframes.y = keyframes.y * 0.000061039
-            if getattr(keyframes, "z", None):
-                keyframes.z = keyframes.z * 0.000061039
-            if getattr(keyframes, "w", None):
-                keyframes.w = keyframes.w * 0.000061039
-        elif type == "32quat":
-            keyframes.x = (keyframes.x - 8) * 0.0089285718
-            keyframes.y = (keyframes.y - 8) * 0.0089285718
-            keyframes.z = (keyframes.z - 8) * 0.0089285718
-            keyframes.w = (keyframes.w - 8) * 0.0089285718
-        elif type == "Quat14":
+    def dequantaize(self, kf, type):
+        dkf = Quaternion(0.0, 0.0, 0.0, 0.0)
+        if type in (11, 12, 13):
+            if getattr(kf, "x", None):
+                dkf.x = kf.x * 0.000061039  # 1/16383
+            if getattr(kf, "y", None):
+                dkf.y = kf.y * 0.000061039
+            if getattr(kf, "z", None):
+                dkf.z = kf.z * 0.000061039
+            if getattr(kf, "w", None):
+                dkf.w = kf.w * 0.000061039
+        elif type == 7:
+            dkf.x = (kf.x - 8) * 0.0089285718
+            dkf.y = (kf.y - 8) * 0.0089285718
+            dkf.z = (kf.z - 8) * 0.0089285718
+            dkf.w = (kf.w - 8) * 0.0089285718
+        elif type == 6:
             bitmask = 16383
-            if keyframes.x > bitmask * 0.5:
-                keyframes.x = - (bitmask - keyframes.x)
-            if keyframes.y > bitmask * 0.5:
-                keyframes.y = - (bitmask - keyframes.y)
-            if keyframes.z > bitmask * 0.5:
-                keyframes.z = - (bitmask - keyframes.z)
-            if keyframes.w > bitmask * 0.5:
-                keyframes.w = - (bitmask - keyframes.w)
-            keyframes.x *= 0.000244156  # 1/4096
-            keyframes.y *= 0.000244156
-            keyframes.z *= 0.000244156
-            keyframes.w *= 0.000244156
-        return keyframes
+            if kf.x > bitmask * 0.5:
+                dkf.x = - (bitmask - kf.x)
+            if kf.y > bitmask * 0.5:
+                dkf.y = - (bitmask - kf.y)
+            if kf.z > bitmask * 0.5:
+                dkf.z = - (bitmask - kf.z)
+            if kf.w > bitmask * 0.5:
+                dkf.w = - (bitmask - kf.w)
+            dkf.x *= 0.000244156  # 1/4096
+            dkf.y *= 0.000244156
+            dkf.z *= 0.000244156
+            dkf.w *= 0.000244156
+        return kf
 
     def restore_w(self, kf):
         w = math.sqrt(1.0 - kf.x**2 - kf.y**2 - kf.z**2)
@@ -337,6 +355,9 @@ class LMTKeyFrames:
 
     def to_vec3(self, kf):
         return Vector((kf.x, kf.y, kf.z))
+
+    def scale_values(self, kf):
+        return kf
 
 
 class LMTVec3:
