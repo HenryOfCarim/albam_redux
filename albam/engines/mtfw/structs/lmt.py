@@ -92,6 +92,43 @@ class Lmt(ReadWriteKaitaiStruct):
             pass
 
 
+    class YwQuat(ReadWriteKaitaiStruct):
+        def __init__(self, _io=None, _parent=None, _root=None):
+            self._io = _io
+            self._parent = _parent
+            self._root = _root
+
+        def _read(self):
+            self.y = self._io.read_bits_int_le(14)
+            self.w = self._io.read_bits_int_le(14)
+            self.duration = self._io.read_bits_int_le(4)
+
+
+        def _fetch_instances(self):
+            pass
+
+
+        def _write__seq(self, io=None):
+            super(Lmt.YwQuat, self)._write__seq(io)
+            self._io.write_bits_int_le(14, self.y)
+            self._io.write_bits_int_le(14, self.w)
+            self._io.write_bits_int_le(4, self.duration)
+
+
+        def _check(self):
+            pass
+
+        @property
+        def size_(self):
+            if hasattr(self, '_m_size_'):
+                return self._m_size_
+
+            self._m_size_ = 32
+            return getattr(self, '_m_size_', None)
+
+        def _invalidate_size_(self):
+            del self._m_size_
+
     class KeyframeInfo(ReadWriteKaitaiStruct):
         def __init__(self, _io=None, _parent=None, _root=None):
             self._io = _io
@@ -175,6 +212,43 @@ class Lmt(ReadWriteKaitaiStruct):
                     raise kaitaistruct.ConsistencyError(u"keyframe_blocks", self.keyframe_blocks[i]._parent, self)
 
 
+
+    class ZwQuat(ReadWriteKaitaiStruct):
+        def __init__(self, _io=None, _parent=None, _root=None):
+            self._io = _io
+            self._parent = _parent
+            self._root = _root
+
+        def _read(self):
+            self.z = self._io.read_bits_int_le(14)
+            self.w = self._io.read_bits_int_le(14)
+            self.duration = self._io.read_bits_int_le(4)
+
+
+        def _fetch_instances(self):
+            pass
+
+
+        def _write__seq(self, io=None):
+            super(Lmt.ZwQuat, self)._write__seq(io)
+            self._io.write_bits_int_le(14, self.z)
+            self._io.write_bits_int_le(14, self.w)
+            self._io.write_bits_int_le(4, self.duration)
+
+
+        def _check(self):
+            pass
+
+        @property
+        def size_(self):
+            if hasattr(self, '_m_size_'):
+                return self._m_size_
+
+            self._m_size_ = 32
+            return getattr(self, '_m_size_', None)
+
+        def _invalidate_size_(self):
+            del self._m_size_
 
     class MotionSe(ReadWriteKaitaiStruct):
         def __init__(self, _io=None, _parent=None, _root=None):
@@ -270,6 +344,43 @@ class Lmt(ReadWriteKaitaiStruct):
 
 
 
+    class Vec3Frame12(ReadWriteKaitaiStruct):
+        def __init__(self, _io=None, _parent=None, _root=None):
+            self._io = _io
+            self._parent = _parent
+            self._root = _root
+
+        def _read(self):
+            self.x = self._io.read_f4le()
+            self.y = self._io.read_f4le()
+            self.z = self._io.read_f4le()
+
+
+        def _fetch_instances(self):
+            pass
+
+
+        def _write__seq(self, io=None):
+            super(Lmt.Vec3Frame12, self)._write__seq(io)
+            self._io.write_f4le(self.x)
+            self._io.write_f4le(self.y)
+            self._io.write_f4le(self.z)
+
+
+        def _check(self):
+            pass
+
+        @property
+        def size_(self):
+            if hasattr(self, '_m_size_'):
+                return self._m_size_
+
+            self._m_size_ = 12
+            return getattr(self, '_m_size_', None)
+
+        def _invalidate_size_(self):
+            del self._m_size_
+
     class SeqInfoAttr(ReadWriteKaitaiStruct):
         def __init__(self, _io=None, _parent=None, _root=None):
             self._io = _io
@@ -297,88 +408,83 @@ class Lmt(ReadWriteKaitaiStruct):
             pass
 
 
-    class OfsFrameBounds(ReadWriteKaitaiStruct):
+    class PolarFrame(ReadWriteKaitaiStruct):
         def __init__(self, _io=None, _parent=None, _root=None):
             self._io = _io
             self._parent = _parent
             self._root = _root
-            self._should_write_body = False
-            self.body__to_write = True
 
         def _read(self):
-            self.ofs_buffer = self._io.read_u4le()
+            self.x = self._io.read_bits_int_le(17)
+            self.y = self._io.read_bits_int_le(17)
+            self.w = self._io.read_bits_int_le(19)
+            self.flags = self._io.read_bits_int_le(3)
+            self.duration = self._io.read_bits_int_le(8)
 
 
         def _fetch_instances(self):
             pass
-            if (self.is_exist != 0):
-                pass
-                _ = self.body
-                self.body._fetch_instances()
-
 
 
         def _write__seq(self, io=None):
-            super(Lmt.OfsFrameBounds, self)._write__seq(io)
-            self._should_write_body = self.body__to_write
-            self._io.write_u4le(self.ofs_buffer)
+            super(Lmt.PolarFrame, self)._write__seq(io)
+            self._io.write_bits_int_le(17, self.x)
+            self._io.write_bits_int_le(17, self.y)
+            self._io.write_bits_int_le(19, self.w)
+            self._io.write_bits_int_le(3, self.flags)
+            self._io.write_bits_int_le(8, self.duration)
 
 
         def _check(self):
             pass
 
         @property
-        def is_exist(self):
-            if hasattr(self, '_m_is_exist'):
-                return self._m_is_exist
+        def size_(self):
+            if hasattr(self, '_m_size_'):
+                return self._m_size_
 
-            self._m_is_exist = self.ofs_buffer
-            return getattr(self, '_m_is_exist', None)
+            self._m_size_ = 40
+            return getattr(self, '_m_size_', None)
 
-        def _invalidate_is_exist(self):
-            del self._m_is_exist
-        @property
-        def body(self):
-            if self._should_write_body:
-                self._write_body()
-            if hasattr(self, '_m_body'):
-                return self._m_body
+        def _invalidate_size_(self):
+            del self._m_size_
 
-            if (self.is_exist != 0):
-                pass
-                _pos = self._io.pos()
-                self._io.seek(self.ofs_buffer)
-                self._m_body = Lmt.FloatBuffer(self._io, self, self._root)
-                self._m_body._read()
-                self._io.seek(_pos)
+    class Quat3Frame(ReadWriteKaitaiStruct):
+        def __init__(self, _io=None, _parent=None, _root=None):
+            self._io = _io
+            self._parent = _parent
+            self._root = _root
 
-            return getattr(self, '_m_body', None)
-
-        @body.setter
-        def body(self, v):
-            self._m_body = v
-
-        def _write_body(self):
-            self._should_write_body = False
-            if (self.is_exist != 0):
-                pass
-                _pos = self._io.pos()
-                self._io.seek(self.ofs_buffer)
-                self.body._write__seq(self._io)
-                self._io.seek(_pos)
+        def _read(self):
+            self.x = self._io.read_f4le()
+            self.y = self._io.read_f4le()
+            self.z = self._io.read_f4le()
 
 
-
-        def _check_body(self):
+        def _fetch_instances(self):
             pass
-            if (self.is_exist != 0):
-                pass
-                if self.body._root != self._root:
-                    raise kaitaistruct.ConsistencyError(u"body", self.body._root, self._root)
-                if self.body._parent != self:
-                    raise kaitaistruct.ConsistencyError(u"body", self.body._parent, self)
 
 
+        def _write__seq(self, io=None):
+            super(Lmt.Quat3Frame, self)._write__seq(io)
+            self._io.write_f4le(self.x)
+            self._io.write_f4le(self.y)
+            self._io.write_f4le(self.z)
+
+
+        def _check(self):
+            pass
+
+        @property
+        def size_(self):
+            if hasattr(self, '_m_size_'):
+                return self._m_size_
+
+            self._m_size_ = 12
+            return getattr(self, '_m_size_', None)
+
+        def _invalidate_size_(self):
+            del self._m_size_
 
     class KeyframeBlock(ReadWriteKaitaiStruct):
         def __init__(self, _io=None, _parent=None, _root=None):
@@ -410,6 +516,47 @@ class Lmt(ReadWriteKaitaiStruct):
         def _check(self):
             pass
 
+
+    class Quatized32Quat(ReadWriteKaitaiStruct):
+        def __init__(self, _io=None, _parent=None, _root=None):
+            self._io = _io
+            self._parent = _parent
+            self._root = _root
+
+        def _read(self):
+            self.w = self._io.read_bits_int_le(7)
+            self.z = self._io.read_bits_int_le(7)
+            self.y = self._io.read_bits_int_le(7)
+            self.x = self._io.read_bits_int_le(7)
+            self.duration = self._io.read_bits_int_le(4)
+
+
+        def _fetch_instances(self):
+            pass
+
+
+        def _write__seq(self, io=None):
+            super(Lmt.Quatized32Quat, self)._write__seq(io)
+            self._io.write_bits_int_le(7, self.w)
+            self._io.write_bits_int_le(7, self.z)
+            self._io.write_bits_int_le(7, self.y)
+            self._io.write_bits_int_le(7, self.x)
+            self._io.write_bits_int_le(4, self.duration)
+
+
+        def _check(self):
+            pass
+
+        @property
+        def size_(self):
+            if hasattr(self, '_m_size_'):
+                return self._m_size_
+
+            self._m_size_ = 64
+            return getattr(self, '_m_size_', None)
+
+        def _invalidate_size_(self):
+            del self._m_size_
 
     class BlockOffset(ReadWriteKaitaiStruct):
         def __init__(self, _io=None, _parent=None, _root=None):
@@ -664,6 +811,121 @@ class Lmt(ReadWriteKaitaiStruct):
 
 
 
+    class XwQuat(ReadWriteKaitaiStruct):
+        def __init__(self, _io=None, _parent=None, _root=None):
+            self._io = _io
+            self._parent = _parent
+            self._root = _root
+
+        def _read(self):
+            self.x = self._io.read_bits_int_le(14)
+            self.w = self._io.read_bits_int_le(14)
+            self.duration = self._io.read_bits_int_le(4)
+
+
+        def _fetch_instances(self):
+            pass
+
+
+        def _write__seq(self, io=None):
+            super(Lmt.XwQuat, self)._write__seq(io)
+            self._io.write_bits_int_le(14, self.x)
+            self._io.write_bits_int_le(14, self.w)
+            self._io.write_bits_int_le(4, self.duration)
+
+
+        def _check(self):
+            pass
+
+        @property
+        def size_(self):
+            if hasattr(self, '_m_size_'):
+                return self._m_size_
+
+            self._m_size_ = 32
+            return getattr(self, '_m_size_', None)
+
+        def _invalidate_size_(self):
+            del self._m_size_
+
+    class Vec3Frame16(ReadWriteKaitaiStruct):
+        def __init__(self, _io=None, _parent=None, _root=None):
+            self._io = _io
+            self._parent = _parent
+            self._root = _root
+
+        def _read(self):
+            self.x = self._io.read_f4le()
+            self.y = self._io.read_f4le()
+            self.z = self._io.read_f4le()
+            self.duration = self._io.read_u4le()
+
+
+        def _fetch_instances(self):
+            pass
+
+
+        def _write__seq(self, io=None):
+            super(Lmt.Vec3Frame16, self)._write__seq(io)
+            self._io.write_f4le(self.x)
+            self._io.write_f4le(self.y)
+            self._io.write_f4le(self.z)
+            self._io.write_u4le(self.duration)
+
+
+        def _check(self):
+            pass
+
+        @property
+        def size_(self):
+            if hasattr(self, '_m_size_'):
+                return self._m_size_
+
+            self._m_size_ = 16
+            return getattr(self, '_m_size_', None)
+
+        def _invalidate_size_(self):
+            del self._m_size_
+
+    class Quatized8Vec3(ReadWriteKaitaiStruct):
+        def __init__(self, _io=None, _parent=None, _root=None):
+            self._io = _io
+            self._parent = _parent
+            self._root = _root
+
+        def _read(self):
+            self.x = self._io.read_u1()
+            self.y = self._io.read_u1()
+            self.z = self._io.read_u1()
+            self.duration = self._io.read_u1()
+
+
+        def _fetch_instances(self):
+            pass
+
+
+        def _write__seq(self, io=None):
+            super(Lmt.Quatized8Vec3, self)._write__seq(io)
+            self._io.write_u1(self.x)
+            self._io.write_u1(self.y)
+            self._io.write_u1(self.z)
+            self._io.write_u1(self.duration)
+
+
+        def _check(self):
+            pass
+
+        @property
+        def size_(self):
+            if hasattr(self, '_m_size_'):
+                return self._m_size_
+
+            self._m_size_ = 4
+            return getattr(self, '_m_size_', None)
+
+        def _invalidate_size_(self):
+            del self._m_size_
+
     class EventCollision(ReadWriteKaitaiStruct):
         def __init__(self, _io=None, _parent=None, _root=None):
             self._io = _io
@@ -894,6 +1156,47 @@ class Lmt(ReadWriteKaitaiStruct):
             if (len(self.data) != self.len_data):
                 raise kaitaistruct.ConsistencyError(u"data", len(self.data), self.len_data)
 
+
+    class Quatized11Quat(ReadWriteKaitaiStruct):
+        def __init__(self, _io=None, _parent=None, _root=None):
+            self._io = _io
+            self._parent = _parent
+            self._root = _root
+
+        def _read(self):
+            self.x = self._io.read_bits_int_le(11)
+            self.y = self._io.read_bits_int_le(11)
+            self.z = self._io.read_bits_int_le(11)
+            self.w = self._io.read_bits_int_le(11)
+            self.duration = self._io.read_bits_int_le(4)
+
+
+        def _fetch_instances(self):
+            pass
+
+
+        def _write__seq(self, io=None):
+            super(Lmt.Quatized11Quat, self)._write__seq(io)
+            self._io.write_bits_int_le(11, self.x)
+            self._io.write_bits_int_le(11, self.y)
+            self._io.write_bits_int_le(11, self.z)
+            self._io.write_bits_int_le(11, self.w)
+            self._io.write_bits_int_le(4, self.duration)
+
+
+        def _check(self):
+            pass
+
+        @property
+        def size_(self):
+            if hasattr(self, '_m_size_'):
+                return self._m_size_
+
+            self._m_size_ = 48
+            return getattr(self, '_m_size_', None)
+
+        def _invalidate_size_(self):
+            del self._m_size_
 
     class FloatBuffer(ReadWriteKaitaiStruct):
         def __init__(self, _io=None, _parent=None, _root=None):
@@ -1141,7 +1444,7 @@ class Lmt(ReadWriteKaitaiStruct):
             if hasattr(self, '_m_is_used'):
                 return self._m_is_used
 
-            self._m_is_used = (self.ofs_data != 0)
+            self._m_is_used = (self.ofs_bounds != 0)
             return getattr(self, '_m_is_used', None)
 
         def _invalidate_is_used(self):
@@ -1188,6 +1491,86 @@ class Lmt(ReadWriteKaitaiStruct):
                     raise kaitaistruct.ConsistencyError(u"bounds", self.bounds._parent, self)
 
 
+
+    class Quatized16Vec3(ReadWriteKaitaiStruct):
+        def __init__(self, _io=None, _parent=None, _root=None):
+            self._io = _io
+            self._parent = _parent
+            self._root = _root
+
+        def _read(self):
+            self.x = self._io.read_u2le()
+            self.y = self._io.read_u2le()
+            self.z = self._io.read_u2le()
+            self.duration = self._io.read_u2le()
+
+
+        def _fetch_instances(self):
+            pass
+
+
+        def _write__seq(self, io=None):
+            super(Lmt.Quatized16Vec3, self)._write__seq(io)
+            self._io.write_u2le(self.x)
+            self._io.write_u2le(self.y)
+            self._io.write_u2le(self.z)
+            self._io.write_u2le(self.duration)
+
+
+        def _check(self):
+            pass
+
+        @property
+        def size_(self):
+            if hasattr(self, '_m_size_'):
+                return self._m_size_
+
+            self._m_size_ = 8
+            return getattr(self, '_m_size_', None)
+
+        def _invalidate_size_(self):
+            del self._m_size_
+
+    class QuatFramev14(ReadWriteKaitaiStruct):
+        def __init__(self, _io=None, _parent=None, _root=None):
+            self._io = _io
+            self._parent = _parent
+            self._root = _root
+
+        def _read(self):
+            self.w = self._io.read_bits_int_le(14)
+            self.z = self._io.read_bits_int_le(14)
+            self.y = self._io.read_bits_int_le(14)
+            self.x = self._io.read_bits_int_le(14)
+            self.duration = self._io.read_bits_int_le(8)
+
+
+        def _fetch_instances(self):
+            pass
+
+
+        def _write__seq(self, io=None):
+            super(Lmt.QuatFramev14, self)._write__seq(io)
+            self._io.write_bits_int_le(14, self.w)
+            self._io.write_bits_int_le(14, self.z)
+            self._io.write_bits_int_le(14, self.y)
+            self._io.write_bits_int_le(14, self.x)
+            self._io.write_bits_int_le(8, self.duration)
+
+
+        def _check(self):
+            pass
+
+        @property
+        def size_(self):
+            if hasattr(self, '_m_size_'):
+                return self._m_size_
+
+            self._m_size_ = 64
+            return getattr(self, '_m_size_', None)
+
+        def _invalidate_size_(self):
+            del self._m_size_
 
     class BlockHeader67(ReadWriteKaitaiStruct):
         def __init__(self, _io=None, _parent=None, _root=None):
@@ -1424,5 +1807,173 @@ class Lmt(ReadWriteKaitaiStruct):
                     raise kaitaistruct.ConsistencyError(u"key_infos", self.key_infos[i]._parent, self)
 
 
+
+    class QuadraticVector3(ReadWriteKaitaiStruct):
+        def __init__(self, _io=None, _parent=None, _root=None):
+            self._io = _io
+            self._parent = _parent
+            self._root = _root
+
+        def _read(self):
+            self.size = self._io.read_u1()
+            self.flags = self._io.read_u1()
+            self.duration = self._io.read_u2le()
+            self.x = self._io.read_f4le()
+            self.y = self._io.read_f4le()
+            self.z = self._io.read_f4le()
+            if ((self.flags >> 1) > 0):
+                pass
+                self.outtangent_x = self._io.read_f4le()
+
+            if ((self.flags >> 2) > 0):
+                pass
+                self.outtangent_y = self._io.read_f4le()
+
+            if ((self.flags >> 4) > 0):
+                pass
+                self.outtangent_z = self._io.read_f4le()
+
+            if ((self.flags >> 8) > 0):
+                pass
+                self.nextframeintangent_x = self._io.read_f4le()
+
+            if ((self.flags >> 16) > 0):
+                pass
+                self.nextframeintangent_y = self._io.read_f4le()
+
+            if ((self.flags >> 32) > 0):
+                pass
+                self.nextframeintangent_z = self._io.read_f4le()
+
+
+
+        def _fetch_instances(self):
+            pass
+            if ((self.flags >> 1) > 0):
+                pass
+
+            if ((self.flags >> 2) > 0):
+                pass
+
+            if ((self.flags >> 4) > 0):
+                pass
+
+            if ((self.flags >> 8) > 0):
+                pass
+
+            if ((self.flags >> 16) > 0):
+                pass
+
+            if ((self.flags >> 32) > 0):
+                pass
+
+
+
+        def _write__seq(self, io=None):
+            super(Lmt.QuadraticVector3, self)._write__seq(io)
+            self._io.write_u1(self.size)
+            self._io.write_u1(self.flags)
+            self._io.write_u2le(self.duration)
+            self._io.write_f4le(self.x)
+            self._io.write_f4le(self.y)
+            self._io.write_f4le(self.z)
+            if ((self.flags >> 1) > 0):
+                pass
+                self._io.write_f4le(self.outtangent_x)
+
+            if ((self.flags >> 2) > 0):
+                pass
+                self._io.write_f4le(self.outtangent_y)
+
+            if ((self.flags >> 4) > 0):
+                pass
+                self._io.write_f4le(self.outtangent_z)
+
+            if ((self.flags >> 8) > 0):
+                pass
+                self._io.write_f4le(self.nextframeintangent_x)
+
+            if ((self.flags >> 16) > 0):
+                pass
+                self._io.write_f4le(self.nextframeintangent_y)
+
+            if ((self.flags >> 32) > 0):
+                pass
+                self._io.write_f4le(self.nextframeintangent_z)
+
+
+
+        def _check(self):
+            pass
+            if ((self.flags >> 1) > 0):
+                pass
+
+            if ((self.flags >> 2) > 0):
+                pass
+
+            if ((self.flags >> 4) > 0):
+                pass
+
+            if ((self.flags >> 8) > 0):
+                pass
+
+            if ((self.flags >> 16) > 0):
+                pass
+
+            if ((self.flags >> 32) > 0):
+                pass
+
+
+        @property
+        def size_(self):
+            if hasattr(self, '_m_size_'):
+                return self._m_size_
+
+            self._m_size_ = self.size
+            return getattr(self, '_m_size_', None)
+
+        def _invalidate_size_(self):
+            del self._m_size_
+
+    class Quatized9Quat(ReadWriteKaitaiStruct):
+        def __init__(self, _io=None, _parent=None, _root=None):
+            self._io = _io
+            self._parent = _parent
+            self._root = _root
+
+        def _read(self):
+            self.x = self._io.read_bits_int_le(9)
+            self.y = self._io.read_bits_int_le(9)
+            self.z = self._io.read_bits_int_le(9)
+            self.w = self._io.read_bits_int_le(9)
+            self.duration = self._io.read_bits_int_le(4)
+
+
+        def _fetch_instances(self):
+            pass
+
+
+        def _write__seq(self, io=None):
+            super(Lmt.Quatized9Quat, self)._write__seq(io)
+            self._io.write_bits_int_le(9, self.x)
+            self._io.write_bits_int_le(9, self.y)
+            self._io.write_bits_int_le(9, self.z)
+            self._io.write_bits_int_le(9, self.w)
+            self._io.write_bits_int_le(4, self.duration)
+
+
+        def _check(self):
+            pass
+
+        @property
+        def size_(self):
+            if hasattr(self, '_m_size_'):
+                return self._m_size_
+
+            self._m_size_ = 40
+            return getattr(self, '_m_size_', None)
+
+        def _invalidate_size_(self):
+            del self._m_size_
 
 

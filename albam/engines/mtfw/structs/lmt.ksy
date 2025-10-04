@@ -3,7 +3,7 @@ meta:
   bit-endian: le
   file-extension: lmt
   id: lmt
-  ks-version: 0.10
+  ks-version: 0.11
   title: MTFramework animation format
 
 
@@ -99,7 +99,7 @@ types:
       data:
         {pos: ofs_data, size: len_data}
       is_used:
-        value: ofs_data != 0
+        value: ofs_bounds != 0
       bounds:
         {pos: ofs_bounds, type: float_buffer, if: is_used}
        
@@ -113,18 +113,8 @@ types:
       - {id: unk_00, type: u2}
       - {id: unk_01, type: u2}
       - {id: unk_02, type: u4}
- 
-  ofs_frame_bounds:
-    seq:
-    - {id: ofs_buffer, type: u4}
-    instances:
-      is_exist:
-        value: ofs_buffer
-      body:
-        pos: ofs_buffer
-        type: float_buffer
-        if: is_exist !=0
-  
+
+
   float_buffer:
     seq:
       - {id: addin, type: f4, repeat: expr, repeat-expr: 4} # names were took from Crazy's template
@@ -175,6 +165,156 @@ types:
     instances:
       attributes:
         {pos: ofs_events, type: attr, repeat: expr, repeat-expr: num_events}
+  
+  
+  quadratic_vector3:
+    seq:
+      - {id: size, type: u1}
+      - {id: flags, type: u1}
+      - {id: duration, type: u2}
+      - {id: x, type: f4}
+      - {id: y, type: f4}
+      - {id: z, type: f4}
+      - {id: outtangent_x, type: f4, if: flags >> 1 > 0}
+      - {id: outtangent_y, type: f4, if: flags >> 2 > 0}
+      - {id: outtangent_z, type: f4, if: flags >> 4 > 0}
+      - {id: nextframeintangent_x, type: f4, if: flags >> 8 > 0}
+      - {id: nextframeintangent_y, type: f4, if: flags >> 16 > 0}
+      - {id: nextframeintangent_z, type: f4, if: flags >> 32 > 0}
+    instances:
+      size_:
+        value: size
+
+  vec3_frame12:
+    seq:
+      - {id: x, type: f4}
+      - {id: y, type: f4}
+      - {id: z, type: f4}
+    instances:
+      size_:
+        value: 12
+  
+  vec3_frame16:
+    seq:
+      - {id: x, type: f4}
+      - {id: y, type: f4}
+      - {id: z, type: f4}
+      - {id: duration, type: u4}
+    instances:
+      size_:
+        value: 16
+  
+  quatized8_vec3:
+    seq:
+    - {id: x, type: u1}
+    - {id: y, type: u1}
+    - {id: z, type: u1}
+    - {id: duration, type: u1}
+    instances:
+      size_:
+        value: 4
+
+  quatized16_vec3:
+    seq:
+      - {id: x, type: u2}
+      - {id: y, type: u2}
+      - {id: z, type: u2}
+      - {id: duration, type: u2}
+    instances:
+      size_:
+        value: 8
+        
+  quat3_frame: # w component calculater
+    seq:
+     - {id: x, type: f4}
+     - {id: y, type: f4}
+     - {id: z, type: f4}
+    instances:
+      size_:
+        value: 12
+      
+  quat_framev14:
+    seq:
+      - {id: w, type: b14}
+      - {id: z, type: b14}
+      - {id: y, type: b14}
+      - {id: x, type: b14}
+      - {id: duration, type: b8}
+    instances:
+      size_:
+        value: 64
+     
+  quatized32_quat:
+    seq:
+      - {id: w, type: b7}
+      - {id: z, type: b7}
+      - {id: y, type: b7}
+      - {id: x, type: b7}
+      - {id: duration, type: b4}
+    instances:
+      size_:
+        value: 64
+
+  xw_quat:
+    seq:
+      - {id: x, type: b14}
+      - {id: w, type: b14}
+      - {id: duration, type: b4}
+    instances:
+      size_:
+        value: 32
+    
+  yw_quat:
+    seq:
+      - {id: y, type: b14}
+      - {id: w, type: b14}
+      - {id: duration, type: b4}
+    instances:
+      size_:
+        value: 32
+  
+  zw_quat:
+    seq:
+      - {id: z, type: b14}
+      - {id: w, type: b14}
+      - {id: duration, type: b4}
+    instances:
+      size_:
+        value: 32
+    
+  quatized11_quat:
+    seq:
+      - {id: x, type: b11}
+      - {id: y, type: b11}
+      - {id: z, type: b11}
+      - {id: w, type: b11}
+      - {id: duration, type: b4}
+    instances:
+      size_:
+        value: 48
+  
+  quatized9_quat:
+    seq:
+      - {id: x, type: b9}
+      - {id: y, type: b9}
+      - {id: z, type: b9}
+      - {id: w, type: b9}
+      - {id: duration, type: b4}
+    instances:
+      size_:
+        value: 40
+ 
+      
+  polar_frame:
+    seq:
+      - {id: x, type: b17}
+      - {id: y, type: b17}
+      - {id: w, type: b19}
+      - {id: flags, type: b3}
+      - {id: duration, type: b8}
+    instances:
+      size_:
+        value: 40
   
   vec3:
     seq:

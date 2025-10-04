@@ -47,6 +47,21 @@ APPID_VERSION_MAPPER = {
     "dd": 67,
 }
 
+KEYFRAME_TYPES_51 = {
+    1: Lmt.Vec3Frame12,  # problably not a real keyframe
+    2: Lmt.Vec3Frame12,
+    3: Lmt.Vec3Frame16,
+    4: Lmt.Quat3Frame,  # Lmt.Quatized16Vec3 for ver55+
+    5: Lmt.QuadraticVector3,  # Lmt.Quatized8Vec3 for ver55+
+    6: Lmt.QuatFramev14,  # Lmt.PolarFrame for ver50-
+    7: Lmt.Quatized32Quat,
+    9: Lmt.Vec3Frame16,
+    11: Lmt.XwQuat,
+    12: Lmt.YwQuat,
+    13: Lmt.ZwQuat,
+    14: Lmt.Quatized11Quat
+}
+
 
 class LMTKeyframeBounds:
     def __init__(self, bound):
@@ -251,9 +266,8 @@ def _create_bone_mapping(armature_obj):
 class LMTUniKey:
     def __init__(self):
         self.value = {
-            "location": Vector((0.0, 0.0, 0.0)),
-            "rotation": Quaternion((1.0, 0.0, 0.0, 0.0)),
-            "scale": Vector((1.0, 1.0, 1.0))
+            "vector": Vector((0.0, 0.0, 0.0)),
+            "quaternion": Quaternion((1.0, 0.0, 0.0, 0.0)),
         }
         self.intangenttype = "custom"
         self.outtangenttype = "custom"
@@ -271,48 +285,58 @@ class LMTKeyFrames:
         self.decoded_frames = []
 
     def decode_framedata(self, version, key_type, data):
-        match key_type:
-            case 1:
-                self.decoded_frames = LMTVec3().decode(data)
-                print("Type: 1")
-            case 2:
-                self.decoded_frames = LMTVec3Frame12().decode(data)
-                print("Type: 2")
-            case 3:
-                self.decoded_frames = LMTVec3Frame16().decode(data)
-                print("Type: 3")
-            case 4:
-                if version > 55:
-                    self.decoded_frames = LMTQuatized16Vec3().decode(data, self.bounds)
-                else:
-                    self.decoded_frames = LMTQuat3Frame().decode(data)
-                    print("Type: 4")
-            case 5:
-                if version > 55:
-                    self.decoded_frames = LMTQuatized8Vec3().decode(data, self.bounds)
-                else:
-                    self.decoded_frames = LMTQuadraticVector3().decode(data)
-            case 6:
-                if version > 50:
-                    self.decoded_frames = LMTQuatFramev14().decode(data)
-                else:
-                    self.decoded_frames = LMTPolarFrame().decode(data)
-            case 7:
-                self.decoded_frames = LMTQuatized32Quat().decode(data, self.bounds)
-            case 9:
-                self.decoded_frames = LMTVec3Frame12().decode(data)
-            case 11:
-                self.decoded_frames = LMTXWQuat().decode(data, self.bounds)
-            case 12:
-                self.decoded_frames = LMTYWQuat().decode(data, self.bounds)
-            case 13:
-                self.decoded_frames = LMTZWQuat().decode(data, self.bounds)
-            case 14:
-                self.decoded_frames = LMTQuatized11Quat().decode(data, self.bounds)
-            case 15:
-                self.decoded_frames = LMTQuatized9Quat().decode(data, self.bounds)
-            case _:
-                print("Keyframe type {} not implemented".format(key_type))
+        kfcls = KEYFRAME_TYPES_51.get(key_type, None)
+        if kfcls is None:
+            print("Unknown keyframe type:", key_type)
+            return
+        keyframe = kfcls()
+        for start in range(0, len(data), keyframe.size_):
+            chunk = data[start: start + keyframe.size_]
+            frame = kfcls(KaitaiStream(io.BytesIO(chunk)))
+            frame._read()
+            print(keyframe)
+
+    def dequantaize(self, keyframes, type):
+        if type == "XWQuat":
+            if getattr(keyframes, "x", None):
+                keyframes.x = keyframes.x * 0.000061039  # 1/16383
+            if getattr(keyframes, "y", None):
+                keyframes.y = keyframes.y * 0.000061039
+            if getattr(keyframes, "z", None):
+                keyframes.z = keyframes.z * 0.000061039
+            if getattr(keyframes, "w", None):
+                keyframes.w = keyframes.w * 0.000061039
+        elif type == "32quat":
+            keyframes.x = (keyframes.x - 8) * 0.0089285718
+            keyframes.y = (keyframes.y - 8) * 0.0089285718
+            keyframes.z = (keyframes.z - 8) * 0.0089285718
+            keyframes.w = (keyframes.w - 8) * 0.0089285718
+        elif type == "Quat14":
+            bitmask = 16383
+            if keyframes.x > bitmask * 0.5:
+                keyframes.x = - (bitmask - keyframes.x)
+            if keyframes.y > bitmask * 0.5:
+                keyframes.y = - (bitmask - keyframes.y)
+            if keyframes.z > bitmask * 0.5:
+                keyframes.z = - (bitmask - keyframes.z)
+            if keyframes.w > bitmask * 0.5:
+                keyframes.w = - (bitmask - keyframes.w)
+            keyframes.x *= 0.000244156  # 1/4096
+            keyframes.y *= 0.000244156
+            keyframes.z *= 0.000244156
+            keyframes.w *= 0.000244156
+        return keyframes
+
+    def restore_w(self, kf):
+        w = math.sqrt(1.0 - kf.x**2 - kf.y**2 - kf.z**2)
+        frame = Quaternion((kf.x, kf.y, kf.z, w))
+        return frame
+
+    def to_quat(self, kf):
+        return Quaternion((kf.w, kf.x, kf.y, kf.z))
+
+    def to_vec3(self, kf):
+        return Vector((kf.x, kf.y, kf.z))
 
 
 class LMTVec3:
@@ -325,7 +349,7 @@ class LMTVec3:
     def decode(self, data):
         u = struct.unpack("fff", data)
         frame = (u[0] / 100, u[1] / 100, u[2] / 100)
-        self.frame.value["location"] = frame
+        self.frame.value["vector"] = frame
         self.decoded_frames.append(frame)
         return self.decoded_frames
 
@@ -340,7 +364,7 @@ class LMTVec3Frame12:
         for start in range(0, len(data), self.size):
             chunk = data[start: start + self.size]
             u = struct.unpack("fff", chunk)
-            self.frame.value["location"] = (u[0] / 100, u[1] / 100, u[2] / 100)
+            self.frame.value["vector"] = (u[0] / 100, u[1] / 100, u[2] / 100)
             self.decoded_frames.append(self.frame)
         return self.decoded_frames
 
@@ -355,12 +379,11 @@ class LMTVec3Frame16:
         for start in range(0, len(data), self.size):
             chunk = data[start: start + self.size]
             u = struct.unpack("fffI", chunk)
-            self.frame.value["location"] = (u[0] / 100, u[1] / 100, u[2] / 100)
+            self.frame.value["vector"] = (u[0] / 100, u[1] / 100, u[2] / 100)
             self.decoded_frames.append(self.frame)
             duration = u[3]
             self.decoded_frames.extend([None] * (duration - 1))
         return self.decoded_frames
-
 
 class LMTQuatized16Vec3:
     def __init__(self):
@@ -374,7 +397,7 @@ class LMTQuatized16Vec3:
             u = struct.unpack("HHHH", chunk)
             frame = self.read16(self, u)
             frame = (frame[0] / 100, frame[1] / 100, frame[2] / 100)
-            self.frame.value["location"] = bounds.lerp3(frame)
+            self.frame.value["vector"] = bounds.lerp3(frame)
             self.decoded_frames.append(frame)
             duration = u[3]
             self.decoded_frames.extend([None] * (duration - 1))
@@ -397,7 +420,7 @@ class LMTQuat3Frame():
             chunk = data[start: start + self.size]
             u = struct.unpack("fff", chunk)
             w = math.sqrt(1.0 - u[0]*u[0] - u[1]*u[1] - u[2]*u[2])
-            self.frame.value["rotation"] = (w, u[0], u[1], u[2])
+            self.frame.value["quternion"] = (w, u[0], u[1], u[2])
             self.decoded_frames.append(self.frame)
 
 
