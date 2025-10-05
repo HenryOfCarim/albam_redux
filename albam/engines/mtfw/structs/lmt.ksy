@@ -242,7 +242,7 @@ types:
       - {id: duration, type: b8}
     instances:
       size_:
-        value: 64
+        value: 8
      
   quatized32_quat:
     seq:
@@ -253,7 +253,7 @@ types:
       - {id: duration, type: b4}
     instances:
       size_:
-        value: 64
+        value: 4
 
   xw_quat:
     seq:
@@ -262,7 +262,7 @@ types:
       - {id: duration, type: b4}
     instances:
       size_:
-        value: 32
+        value: 4
     
   yw_quat:
     seq:
@@ -271,7 +271,7 @@ types:
       - {id: duration, type: b4}
     instances:
       size_:
-        value: 32
+        value: 4
   
   zw_quat:
     seq:
@@ -280,7 +280,7 @@ types:
       - {id: duration, type: b4}
     instances:
       size_:
-        value: 32
+        value: 4
     
   quatized11_quat:
     seq:
@@ -291,7 +291,7 @@ types:
       - {id: duration, type: b4}
     instances:
       size_:
-        value: 48
+        value: 6
   
   quatized9_quat:
     seq:
@@ -302,7 +302,7 @@ types:
       - {id: duration, type: b4}
     instances:
       size_:
-        value: 40
+        value: 5
  
       
   polar_frame:
@@ -314,7 +314,7 @@ types:
       - {id: duration, type: b8}
     instances:
       size_:
-        value: 40
+        value: 8
   
   vec3:
     seq:

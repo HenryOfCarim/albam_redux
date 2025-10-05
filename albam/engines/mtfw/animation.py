@@ -320,7 +320,7 @@ class LMTKeyFrames:
             chunk = data[start: start + keyframe.size_]
             frame = kfcls(KaitaiStream(io.BytesIO(chunk)))
             frame._read()
-            duration = getattr(frame, "duration", None)
+            duration = getattr(frame, "duration", 1)
             if self.track_type == "rotation":
                 if key_type == 4 and self.version < 55:  # Quat3Frame
                     self.decoded_frames.append(self.restore_w(frame))
@@ -353,12 +353,20 @@ class LMTKeyFrames:
             bitmask = 16383
             if kf.w > bitmask * 0.5:
                 dkf.w = - (bitmask - kf.w)
+            else:
+                dkf.w = kf.w
             if kf.x > bitmask * 0.5:
                 dkf.x = - (bitmask - kf.x)
+            else:
+                dkf.x = kf.x
             if kf.y > bitmask * 0.5:
                 dkf.y = - (bitmask - kf.y)
+            else:
+                dkf.y = kf.y
             if kf.z > bitmask * 0.5:
                 dkf.z = - (bitmask - kf.z)
+            else:
+                dkf.z = kf.z
             dkf.x *= 0.000244156  # 1/4096
             dkf.y *= 0.000244156
             dkf.z *= 0.000244156
@@ -382,6 +390,13 @@ class LMTKeyFrames:
     def to_vec3(self, kf):
         kf = self.scale_vector(kf)
         return Vector((kf.x, kf.y, kf.z))
+
+    def clip_and_divide(self, num):
+        RANGE_ALL = 2 ** 14 - 1
+        RANGE_SPLIT = 2 ** 13 - 1
+        if num > RANGE_SPLIT:
+            num -= RANGE_ALL
+        return num / 4096
 
 
 # current implementation

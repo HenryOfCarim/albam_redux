@@ -123,7 +123,7 @@ class Lmt(ReadWriteKaitaiStruct):
             if hasattr(self, '_m_size_'):
                 return self._m_size_
 
-            self._m_size_ = 32
+            self._m_size_ = 4
             return getattr(self, '_m_size_', None)
 
         def _invalidate_size_(self):
@@ -244,7 +244,7 @@ class Lmt(ReadWriteKaitaiStruct):
             if hasattr(self, '_m_size_'):
                 return self._m_size_
 
-            self._m_size_ = 32
+            self._m_size_ = 4
             return getattr(self, '_m_size_', None)
 
         def _invalidate_size_(self):
@@ -443,7 +443,7 @@ class Lmt(ReadWriteKaitaiStruct):
             if hasattr(self, '_m_size_'):
                 return self._m_size_
 
-            self._m_size_ = 40
+            self._m_size_ = 8
             return getattr(self, '_m_size_', None)
 
         def _invalidate_size_(self):
@@ -552,7 +552,7 @@ class Lmt(ReadWriteKaitaiStruct):
             if hasattr(self, '_m_size_'):
                 return self._m_size_
 
-            self._m_size_ = 64
+            self._m_size_ = 4
             return getattr(self, '_m_size_', None)
 
         def _invalidate_size_(self):
@@ -842,7 +842,7 @@ class Lmt(ReadWriteKaitaiStruct):
             if hasattr(self, '_m_size_'):
                 return self._m_size_
 
-            self._m_size_ = 32
+            self._m_size_ = 4
             return getattr(self, '_m_size_', None)
 
         def _invalidate_size_(self):
@@ -1192,7 +1192,7 @@ class Lmt(ReadWriteKaitaiStruct):
             if hasattr(self, '_m_size_'):
                 return self._m_size_
 
-            self._m_size_ = 48
+            self._m_size_ = 6
             return getattr(self, '_m_size_', None)
 
         def _invalidate_size_(self):
@@ -1566,7 +1566,7 @@ class Lmt(ReadWriteKaitaiStruct):
             if hasattr(self, '_m_size_'):
                 return self._m_size_
 
-            self._m_size_ = 64
+            self._m_size_ = 8
             return getattr(self, '_m_size_', None)
 
         def _invalidate_size_(self):
@@ -1970,7 +1970,7 @@ class Lmt(ReadWriteKaitaiStruct):
             if hasattr(self, '_m_size_'):
                 return self._m_size_
 
-            self._m_size_ = 40
+            self._m_size_ = 5
             return getattr(self, '_m_size_', None)
 
         def _invalidate_size_(self):
