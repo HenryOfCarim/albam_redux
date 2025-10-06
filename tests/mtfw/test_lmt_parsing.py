@@ -82,4 +82,3 @@ def test_lmt(parsed_lmt_from_arc):
                 assert tr.usage in ROTATION
                 assert tr.ofs_bounds != 0
                 assert tr.len_data % 5 == 0
-

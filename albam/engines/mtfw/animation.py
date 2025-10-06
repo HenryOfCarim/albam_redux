@@ -1,6 +1,4 @@
-from ctypes import Structure, c_ulonglong
 import io
-import struct
 import math
 from io import BytesIO
 from albam.vfs import VirtualFileData
@@ -201,7 +199,8 @@ def load_lmt(file_list_item, context):
                 for c in curves:
                     c.group = group
             except RuntimeError as err:
-                print('unknown error:', err, "Block index: {0}, Track index:{1}".format(block_index, track_index))
+                print('unknown error:', err, "Block index: {0}, Track index:{1}".format(
+                    block_index, track_index))
                 continue
             # for frame_index, frame_data in enumerate(decoded_frames):
             for frame_index, frame_data in enumerate(keyframes.decoded_frames):
@@ -277,7 +276,7 @@ def _create_bone_mapping(armature_obj):
     return bone_names
 
 
-# Unused for now
+# Unused for now but maybe LMTQuadraticVector3 will need it
 class LMTUniKey:
     def __init__(self):
         self.value = {
@@ -840,7 +839,6 @@ def export_lmt(bl_obj):
         ofc_mse = lmt_offsets["motion_se_attr_offsets"]
         ofc_tr_data = lmt_offsets["track_data_offsets"]
     else:
-        # ofc_motion_headers = lmt_offsets["motion_headers_offsets"]
         ofc_track_headers = lmt_offsets["track_headers_offsets"]
         ofc_bounds = lmt_offsets["bounds_offsets"]
         ofc_tr_data = lmt_offsets["track_data_offsets"]
@@ -848,8 +846,6 @@ def export_lmt(bl_obj):
         ofc_sq_info_attr = lmt_offsets["seq_info_attr_offsets"]
         ofc_kf_info = lmt_offsets["key_info_offsets"]
         ofc_kf_info_attr = lmt_offsets["key_info_attr_offsets"]
-        #return None
-    # ofc_block, ofc_frames, ofc_ce, ofc_mse, ofc_tr_data, final_size = _calculate_offsets(bl_objects, app_id)
     for i, bl_obj in enumerate(bl_objects):
         block_offset = dst_lmt.BlockOffset(_parent=dst_lmt, _root=dst_lmt)
         custom_props = bl_obj.albam_custom_properties.get_custom_properties_for_appid(app_id)
@@ -942,7 +938,6 @@ def export_lmt(bl_obj):
                 dst_kf_infos = []
                 for j, kf_info in enumerate(kf_infos):
                     dst_kf_info = dst_lmt.KeyframeInfo(_parent=anim_header, _root=dst_lmt)
-                    #kf_info.copy_custom_properties_to(dst_kf_info)
                     k_blocks = getattr(kf_info, "keyframe_blocks")
                     dst_kf_info.type = kf_info.type
                     dst_kf_info.work = kf_info.work
@@ -967,7 +962,6 @@ def export_lmt(bl_obj):
                     track.bounds = None
                     if dst_track.buffer_type in BOUNDS_BUFF_TYPES:
                         # TODO move into calc offsets
-                        #dst_track.ofs_bounds = ofc_bounds[i][j]
                         dst_track.ofs_bounds = ofc_bounds[i][j]
                         bound = getattr(track, "track_bounds")[0]
                         dst_bound = dst_lmt.FloatBuffer(_parent=dst_track, _root=dst_lmt)
