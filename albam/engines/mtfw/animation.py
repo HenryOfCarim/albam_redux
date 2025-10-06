@@ -28,10 +28,10 @@ BOUNDS_BUFF_TYPES = [4, 5, 7, 11, 12, 13, 14, 15]
 # U_NULL_SCALE = 0x5, Unknown
 USAGE = {
     0: "rotation_quaternion",  # Local rotation
-    1: "position",  # Local Position
+    1: "location",  # Local Position
     2: "scale",  # Local Scale
     3: "rotation_quaternion",  # Absolute Rotation
-    4: "position",  # Absolute Position
+    4: "location",  # Absolute Position
     5: "scale",  # Unknown
 }
 
@@ -176,18 +176,17 @@ def load_lmt(file_list_item, context):
                 frame = None
                 rd = track.reference_data
                 if track_type == "location":
-                    frame = Vector((rd[0], rd[1], rd[2]))
-                    print("location")
+                    frame = Vector((rd[0] / 100, rd[1] / 100, rd[2] / 100))
+                    print("default location")
                 else:
                     frame = Quaternion((rd[0], rd[1], rd[2], rd[3]))
-                    print("rotation_quaternion")
+                    print("default rotation_quaternion")
                 keyframes.decoded_frames.append(frame)
             if not keyframes.decoded_frames:
                 continue
 
-            # if track.usage > 2 and track_type != "rotation":
-            #    print("absolute transforms")
-            #    decoded_frames = _parent_space_to_local(decoded_frames, armature, bone_index)
+            if track.usage == 4 or track.usage == 1 and armature.data.bones[bone_index].parent is None:
+                keyframes.decoded_frames = _parent_space_to_local_translation(keyframes.decoded_frames, armature, bone_index)
 
             group_name = str(bone_index)
             group = action.groups.get(group_name) or action.groups.new(group_name)
@@ -330,14 +329,26 @@ class LMTKeyFrames:
     def dequantaize(self, kf, type):
         dkf = Quaternion((0.0, 0.0, 0.0, 0.0))
         if type in (11, 12, 13):
-            if getattr(kf, "x", None):
-                dkf.x = kf.x * 0.000061039  # 1/16383
-            if getattr(kf, "y", None):
-                dkf.y = kf.y * 0.000061039
-            if getattr(kf, "z", None):
-                dkf.z = kf.z * 0.000061039
             if getattr(kf, "w", None):
-                dkf.w = kf.w * 0.000061039
+                if self.bounds:
+                    dkf.w = kf.w * 0.000061039
+                else:
+                    dkf.w = self.clip_and_divide(kf.w, qw=True)
+            if getattr(kf, "x", None):
+                if self.bounds:
+                    dkf.x = kf.x * 0.000061039  # 1/16383
+                else:
+                    dkf.x = self.clip_and_divide(kf.x, qw=True)
+            if getattr(kf, "y", None):
+                if self.bounds:
+                    dkf.y = kf.y * 0.000061039
+                else:
+                    dkf.y = self.clip_and_divide(kf.y, qw=True)
+            if getattr(kf, "z", None):
+                if self.bounds:
+                    dkf.z = kf.z * 0.000061039
+                else:
+                    dkf.z = self.clip_and_divide(kf.z, qw=True)
         elif type == 7:
             dkf.w = (kf.w - 8) * 0.0089285718
             dkf.x = (kf.x - 8) * 0.0089285718
@@ -365,16 +376,18 @@ class LMTKeyFrames:
         return kf
 
     def to_vec3(self, kf, track_type):
+        dkf = Vector((kf.x, kf.y, kf.z))
         if track_type == "location":
-            kf = self.scale_vector(kf)
-        return Vector((kf.x, kf.y, kf.z))
+            dkf = dkf / 100
+        return dkf
 
-    def clip_and_divide(self, num):
+    def clip_and_divide(self, num, qw=False):
         RANGE_ALL = 2 ** 14 - 1
         RANGE_SPLIT = 2 ** 13 - 1
+        DIVIDER = 4096 if not qw else 8192
         if num > RANGE_SPLIT:
             num -= RANGE_ALL
-        return num / 4096
+        return num / DIVIDER
 
 
 def _get_or_create_ik_bone(armature, track_bone_index, bone_index, mapping):
@@ -445,7 +458,7 @@ def _get_or_create_root_motion_bone(armature, mapping):
     return bone_name
 
 
-def _parent_space_to_local(decoded_frames, armature, bone_index):
+def _parent_space_to_local_translation(decoded_frames, armature, bone_index):
     local_space_frames = []
     for frame in decoded_frames:
         if frame is None:
@@ -475,7 +488,7 @@ def _parent_space_to_local_rotation(decoded_frames, armature, bone_index):
         bone_matrix = bone.matrix_local
 
         parent_rot = parent_matrix.to_quaternion()
-        bone_rot = Quaternion(frame)  # frame (w, x, y, z)
+        bone_rot = frame  # frame (w, x, y, z)
         local_rot = parent_rot.inverted() @ bone_rot
         local_space_frame.append(local_rot)
     return local_space_frame
@@ -816,7 +829,11 @@ def _calculate_offsets(bl_objects, app_id):
         return _calculate_offsets_lmt67(bl_objects, app_id)
 
 
+@blender_registry.register_export_function(app_id="re0", extension="lmt")
+@blender_registry.register_export_function(app_id="re1", extension="lmt")
 @blender_registry.register_export_function(app_id="re5", extension="lmt")
+@blender_registry.register_export_function(app_id="re6", extension="lmt")
+@blender_registry.register_export_function(app_id="rev1", extension="lmt")
 @blender_registry.register_export_function(app_id="rev2", extension="lmt")
 def export_lmt(bl_obj):
     # export_settings = bpy.context.scene.albam.export_settings
