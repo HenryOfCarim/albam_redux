@@ -29,10 +29,10 @@ BOUNDS_BUFF_TYPES = [4, 5, 7, 11, 12, 13, 14, 15]
 # U_NULL_TRANSLATE = 0x4, Absolute Position
 # U_NULL_SCALE = 0x5, Unknown
 USAGE = {
-    0: "rotation",  # Local rotation
+    0: "rotation_quaternion",  # Local rotation
     1: "position",  # Local Position
     2: "scale",  # Local Scale
-    3: "rotation",  # Absolute Rotation
+    3: "rotation_quaternion",  # Absolute Rotation
     4: "position",  # Absolute Position
     5: "scale",  # Unknown
 }
@@ -63,6 +63,8 @@ KEYFRAME_TYPES_51 = {
     15: Lmt.Quatized9Quat,
 }
 
+BOUNDS_BUFF_TYPES = [4, 5, 7, 11, 12, 13, 14, 15]
+
 KEYFRAME_TYPES_67 = KEYFRAME_TYPES_51.copy()
 KEYFRAME_TYPES_67.update({
     4: Lmt.Quatized16Vec3,
@@ -79,24 +81,26 @@ class LMTKeyframeBounds:
     def __init__(self, bound):
         self.addin = bound.addin
         self.offset = bound.offset
+        self.map = ["x", "y", "z", "w"]
 
     def lerp3(self, fraction):
-        """fraction: list/tuple/array of 4 floats"""
+        """fraction: imported vector keyframe"""
         # Returns only x, y, z (as point3)
-        return [
-            self.offset[i] + fraction[i] * self.addin[i]
-            for i in range(3)
-        ]
+        return Vector((
+            self.offset[0] + fraction.x * self.addin[0],
+            self.offset[1] + fraction.y * self.addin[1],
+            self.offset[2] + fraction.z * self.addin[2],
+            ))
 
     def lerpq(self, fraction):
-        """fraction: list/tuple/array of 4 floats"""
+        """fraction: imported quaternion keyframe"""
         # Returns quaternion (x, y, z, w)
-        return [
-            self.offset[0] + fraction[0] * self.addin[0],
-            self.offset[1] + fraction[1] * self.addin[1],
-            self.offset[2] + fraction[2] * self.addin[2],
-            self.offset[3] + fraction[3] * self.addin[3],
-        ]
+        return Quaternion((
+            self.offset[3] + fraction.w * self.addin[3],
+            self.offset[0] + fraction.x * self.addin[0],
+            self.offset[1] + fraction.y * self.addin[1],
+            self.offset[2] + fraction.z * self.addin[2],
+        ))
 
 
 @blender_registry.register_import_function(app_id="re0", extension='lmt', file_category="ANIMATION")
@@ -171,6 +175,7 @@ def load_lmt(file_list_item, context):
             decoded_frames = []
             if track.len_data > 0:
                 keyframes.decode_framedata(lmt_ver, track.buffer_type, track.data)
+                """
                 if track.buffer_type == 1:
                     # Location
                     decoded_frames = decode_type_1(track.data)
@@ -189,6 +194,7 @@ def load_lmt(file_list_item, context):
                     # TODO: print statistics of missing tracks
                     # print("Unknown buffer_type, skipping", track.buffer_type)
                     continue
+                """
             else:
                 frame = None
                 rd = track.reference_data
@@ -197,19 +203,20 @@ def load_lmt(file_list_item, context):
                     print("location")
                 else:
                     frame = Quaternion((rd[0], rd[1], rd[2], rd[3]))
-                    print("rotation")
+                    print("rotation_quaternion")
                 keyframes.decoded_frames.append(frame)
-            if not decoded_frames:
+            if not keyframes.decoded_frames:
                 continue
 
-            if track.usage > 2:
-                decoded_frames = _parent_space_to_local(decoded_frames, armature, bone_index)
+            # if track.usage > 2 and track_type != "rotation":
+            #    print("absolute transforms")
+            #    decoded_frames = _parent_space_to_local(decoded_frames, armature, bone_index)
 
             group_name = str(bone_index)
             group = action.groups.get(group_name) or action.groups.new(group_name)
             data_path = f"pose.bones[\"{bone_index}\"].{track_type}"
-            num_curv = len(decoded_frames[0])
-            # num_curv = 4 if track_type == "rotation" else 3
+            # num_curv = len(decoded_frames[0])
+            num_curv = 4 if track_type == "rotation_quaternion" else 3
             try:
                 curves = [action.fcurves.new(data_path=data_path, index=i) for i in range(num_curv)]
                 for c in curves:
@@ -217,12 +224,13 @@ def load_lmt(file_list_item, context):
             except RuntimeError as err:
                 print('unknown error:', err, "Block index: {0}, Track index:{1}".format(block_index, track_index))
                 continue
-            for frame_index, frame_data in enumerate(decoded_frames):
+            # for frame_index, frame_data in enumerate(decoded_frames):
+            for frame_index, frame_data in enumerate(keyframes.decoded_frames):
                 if frame_data is None:
                     continue
                 for curve_idx, curve in enumerate(curves):
                     curve.keyframe_points.add(1)
-                    curve.keyframe_points[-1].co = (frame_index + 1, frame_data[curve_idx])
+                    curve.keyframe_points[-1].co = (frame_index + 1, frame_data[curve_idx])  # frame , value
                     curve.keyframe_points[-1].interpolation = 'LINEAR'
 
         # building custom attributes of lmt metadata
@@ -290,16 +298,18 @@ def _create_bone_mapping(armature_obj):
     return bone_names
 
 
+# Unused for now
 class LMTUniKey:
     def __init__(self):
         self.value = {
             "vector": Vector((0.0, 0.0, 0.0)),
             "quaternion": Quaternion((1.0, 0.0, 0.0, 0.0)),
         }
+        # tangets used only for LMTQuadraticVector3
         self.intangenttype = "custom"
         self.outtangenttype = "custom"
-        self.intangent = [0.0, 0.0]
-        self.outtangent = [0.0, 0.0]
+        self.intangent = [0.0, 0.0, 0.0]
+        self.outtangent = [0.0, 0.0, 0.0]
 
 
 class LMTKeyFrames:
@@ -321,15 +331,25 @@ class LMTKeyFrames:
             frame = kfcls(KaitaiStream(io.BytesIO(chunk)))
             frame._read()
             duration = getattr(frame, "duration", 1)
-            if self.track_type == "rotation":
-                if key_type == 4 and self.version < 55:  # Quat3Frame
-                    self.decoded_frames.append(self.restore_w(frame))
+            dframe = None
+            if self.track_type == "rotation_quaternion":
+                if key_type == 4:  # Quat3Frame
+                    dframe = self.restore_w(frame)
+                    # self.decoded_frames.append(self.restore_w(frame))
                 elif key_type in (6, 7, 11, 12, 13, 14, 15):
-                    self.decoded_frames.append(self.dequantaize(frame, key_type))
+                    dframe = self.dequantaize(frame, key_type)
+                    # self.decoded_frames.append(self.dequantaize(frame, key_type))
                 else:
-                    self.decoded_frames.append(self.to_quat(frame))
+                    dframe = self.to_quat(frame)
+                    # self.decoded_frames.append(self.to_quat(frame))
+                if key_type in BOUNDS_BUFF_TYPES and self.bounds:
+                    dframe = self.bounds.lerpq(dframe)
             else:
-                self.decoded_frames.append(self.to_vec3(frame))
+                dframe = self.to_vec3(frame, self.track_type)
+                if key_type in BOUNDS_BUFF_TYPES and self.bounds:
+                    dframe = self.bounds.lerp3(frame)
+                # self.decoded_frames.append(self.to_vec3(frame))
+            self.decoded_frames.append(dframe)
             if duration:
                 self.decoded_frames.extend([None] * (duration - 1))
 
@@ -350,27 +370,10 @@ class LMTKeyFrames:
             dkf.y = (kf.y - 8) * 0.0089285718
             dkf.z = (kf.z - 8) * 0.0089285718
         elif type == 6:
-            bitmask = 16383
-            if kf.w > bitmask * 0.5:
-                dkf.w = - (bitmask - kf.w)
-            else:
-                dkf.w = kf.w
-            if kf.x > bitmask * 0.5:
-                dkf.x = - (bitmask - kf.x)
-            else:
-                dkf.x = kf.x
-            if kf.y > bitmask * 0.5:
-                dkf.y = - (bitmask - kf.y)
-            else:
-                dkf.y = kf.y
-            if kf.z > bitmask * 0.5:
-                dkf.z = - (bitmask - kf.z)
-            else:
-                dkf.z = kf.z
-            dkf.x *= 0.000244156  # 1/4096
-            dkf.y *= 0.000244156
-            dkf.z *= 0.000244156
-            dkf.w *= 0.000244156
+            dkf.w = self.clip_and_divide(kf.w)
+            dkf.x = self.clip_and_divide(kf.x)
+            dkf.y = self.clip_and_divide(kf.y)
+            dkf.z = self.clip_and_divide(kf.z)
         return dkf
 
     def restore_w(self, kf):
@@ -387,8 +390,9 @@ class LMTKeyFrames:
         kf.z = kf.z / 100
         return kf
 
-    def to_vec3(self, kf):
-        kf = self.scale_vector(kf)
+    def to_vec3(self, kf, track_type):
+        if track_type == "location":
+            kf = self.scale_vector(kf)
         return Vector((kf.x, kf.y, kf.z))
 
     def clip_and_divide(self, num):
@@ -478,7 +482,7 @@ def decode_type_4(data, lmt_ver, bounds=None):
             chunk = data[start: start + CHUNK_SIZE]
             u = struct.unpack("HHHH", chunk)
             frame = (u[0] / 100, u[1] / 100, u[2] / 100)
-            frame = bounds.lerp3(frame)
+            # frame = bounds.lerp3(frame)
             decoded_frames.append(frame)
             duration = u[3]
             decoded_frames.extend([None] * (duration - 1))
