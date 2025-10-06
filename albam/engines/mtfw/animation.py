@@ -172,29 +172,8 @@ def load_lmt(file_list_item, context):
 
             track_type = USAGE[track.usage]
             keyframes.track_type = USAGE[track.usage]
-            decoded_frames = []
             if track.len_data > 0:
                 keyframes.decode_framedata(lmt_ver, track.buffer_type, track.data)
-                """
-                if track.buffer_type == 1:
-                    # Location
-                    decoded_frames = decode_type_1(track.data)
-                elif track.buffer_type == 2:
-                    # TRACK_MODE = "location"
-                    decoded_frames = decode_type_2(track.data)
-                elif track.buffer_type == 4:
-                    # TRACK_MODE = "rotation_quaternion"
-                    decoded_frames = decode_type_4(track.data, lmt_ver, bounds)
-                elif track.buffer_type == 6:
-                    decoded_frames = decode_type_6(track.data)
-                elif track.buffer_type == 9:
-                    # TRACK_MODE = "location"
-                    decoded_frames = decode_type_9(track.data)
-                else:
-                    # TODO: print statistics of missing tracks
-                    # print("Unknown buffer_type, skipping", track.buffer_type)
-                    continue
-                """
             else:
                 frame = None
                 rd = track.reference_data
@@ -335,20 +314,16 @@ class LMTKeyFrames:
             if self.track_type == "rotation_quaternion":
                 if key_type == 4:  # Quat3Frame
                     dframe = self.restore_w(frame)
-                    # self.decoded_frames.append(self.restore_w(frame))
                 elif key_type in (6, 7, 11, 12, 13, 14, 15):
                     dframe = self.dequantaize(frame, key_type)
-                    # self.decoded_frames.append(self.dequantaize(frame, key_type))
                 else:
                     dframe = self.to_quat(frame)
-                    # self.decoded_frames.append(self.to_quat(frame))
                 if key_type in BOUNDS_BUFF_TYPES and self.bounds:
                     dframe = self.bounds.lerpq(dframe)
             else:
                 dframe = self.to_vec3(frame, self.track_type)
                 if key_type in BOUNDS_BUFF_TYPES and self.bounds:
                     dframe = self.bounds.lerp3(frame)
-                # self.decoded_frames.append(self.to_vec3(frame))
             self.decoded_frames.append(dframe)
             if duration:
                 self.decoded_frames.extend([None] * (duration - 1))
@@ -401,192 +376,6 @@ class LMTKeyFrames:
         if num > RANGE_SPLIT:
             num -= RANGE_ALL
         return num / 4096
-
-
-# current implementation
-class FrameQuat4_14(Structure):
-    _fields_ = (
-        ('_w', c_ulonglong, 14),
-        ('_z', c_ulonglong, 14),
-        ('_y', c_ulonglong, 14),
-        ('_x', c_ulonglong, 14),
-        ('duration', c_ulonglong, 8)
-    )
-    RANGE_ALL = 2 ** 14 - 1
-    RANGE_SPLIT = 2 ** 13 - 1
-
-    @classmethod
-    def _clip_and_divide(cls, num):
-        if num > cls.RANGE_SPLIT:
-            num -= cls.RANGE_ALL
-        return num / 4096
-
-    @property
-    def w(self):
-        return self._clip_and_divide(self._w)
-
-    @property
-    def x(self):
-        return self._clip_and_divide(self._x)
-
-    @property
-    def y(self):
-        return self._clip_and_divide(self._y)
-
-    @property
-    def z(self):
-        return self._clip_and_divide(self._z)
-
-
-# LMTVec3 Single Vector
-def decode_type_1(data):
-    decoded_framers = []
-    u = struct.unpack("fff", data)
-    floats = (u[0] / 100, u[1] / 100, u[2] / 100)
-    return decoded_framers[floats]
-
-
-# LMTVec3Frame12 T_VECTOR3_CONST = 0x2,
-def decode_type_2(data):
-    decoded_frames = []
-    CHUNK_SIZE = 12
-
-    for start in range(0, len(data), CHUNK_SIZE):
-        chunk = data[start: start + CHUNK_SIZE]
-        u = struct.unpack("fff", chunk)
-        floats = (u[0] / 100, u[1] / 100, u[2] / 100)
-        decoded_frames.append(floats)
-    return decoded_frames
-
-
-# LMTVec3Frame16
-def decode_type_3(data):
-    decoded_frames = []
-    CHUNK_SIZE = 16
-    for start in range(0, len(data), CHUNK_SIZE):
-        chunk = data[start: start + CHUNK_SIZE]
-        u = struct.unpack("fffI", chunk)
-        decoded_frames.append(u[0] / 100, u[1] / 100, u[2] / 100)
-        duration = u[3]
-        decoded_frames.extend([None] * (duration - 1))
-    return decoded_frames
-
-
-# LMTQuat3Frame but LMTQuatized16Vec3 for ver55+
-def decode_type_4(data, lmt_ver, bounds=None):
-    decoded_frames = []
-    if lmt_ver > 55:
-        # LMTQuatized16Vec3
-        CHUNK_SIZE = 8
-        for start in range(0, len(data), CHUNK_SIZE):
-            chunk = data[start: start + CHUNK_SIZE]
-            u = struct.unpack("HHHH", chunk)
-            frame = (u[0] / 100, u[1] / 100, u[2] / 100)
-            # frame = bounds.lerp3(frame)
-            decoded_frames.append(frame)
-            duration = u[3]
-            decoded_frames.extend([None] * (duration - 1))
-    else:
-        # LMTQuat3Frame
-        CHUNK_SIZE = 12
-        for start in range(0, len(data), CHUNK_SIZE):
-            chunk = data[start: start + CHUNK_SIZE]
-            u = struct.unpack("fff", chunk)
-            w = math.sqrt(1.0 - u[0]*u[0] - u[1]*u[1] - u[2]*u[2])
-        decoded_frames.append((w, u[0], u[1], u[2]))
-    return decoded_frames
-
-
-# LMTQuadraticVector3 but LMTQuatized8Vec3 for ver55+
-def decode_type_5(data, lmt_ver, bounds=None):
-    decoded_frames = []
-    if lmt_ver > 55:
-        CHUNK_SIZE = 4
-        for start in range(0, len(data), CHUNK_SIZE):
-            chunk = data[start: start + CHUNK_SIZE]
-            u = struct.unpack("BBBB", chunk)
-            frame = (u[0] / 100, u[1] / 100, u[2] / 100)
-            frame = bounds.lerp3(frame)
-            decoded_frames.append(frame)
-            duration = u[3]
-            decoded_frames.extend([None] * (duration - 1))
-    return decoded_frames
-
-
-# LMTQuatFramev14 T_POLAR3KEY = 0x6, Spherical Rotation
-def decode_type_6(data):
-    decoded_frames = []
-    CHUNK_SIZE = 8
-    for idx, start in enumerate(range(0, len(data), CHUNK_SIZE)):
-        chunk = data[start: start + CHUNK_SIZE]
-        frame = FrameQuat4_14()
-        io.BytesIO(chunk).readinto(frame)
-
-        decoded_frames.append((frame.w, frame.x, frame.y, frame.z))
-        # Add empty frames to fill gaps between keyframes
-        decoded_frames.extend([None] * (frame.duration - 1))
-
-    return decoded_frames
-
-
-# LMTQuatized32Quat
-def decode_type_7(data):
-    decoded_frames = []
-    print("Not Implemented")
-    return decoded_frames
-
-
-# LMTVec3Frame_9 T_LINEARKEY = 0x9,
-def decode_type_9(data):
-    decoded_frames = []
-    CHUNK_SIZE = 16
-
-    for start in range(0, len(data), CHUNK_SIZE):
-        chunk = data[start: start + CHUNK_SIZE]
-        u = struct.unpack("fffI", chunk)
-        floats = u[:3]
-        duration = u[3]
-        floats = (u[0] / 100, u[1] / 100, u[2] / 100)
-
-        decoded_frames.append(floats)
-        decoded_frames.extend([None] * (duration - 1))
-
-    return decoded_frames
-
-
-# LMTXWQuat
-def decode_type_11(data):
-    decoded_frames = []
-    print("LMTXWQuat not Implemented")
-    return decoded_frames
-
-
-# LMTYWQuat
-def decode_type_12(data):
-    decoded_frames = []
-    print("LMTYWQuat not Implemented")
-    return decoded_frames
-
-
-# LMTZWQuat
-def decode_type_13(data):
-    decoded_frames = []
-    print("Not Implemented")
-    return decoded_frames
-
-
-# LMTQuatized11Quat
-def decode_type_14(data):
-    decoded_frames = []
-    print("Not Implemented")
-    return decoded_frames
-
-
-# LMTQuatized9Quat
-def decode_type_15(data):
-    decoded_frames = []
-    print("Not Implemented")
-    return decoded_frames
 
 
 def _get_or_create_ik_bone(armature, track_bone_index, bone_index, mapping):
