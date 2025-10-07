@@ -46,7 +46,7 @@ APPID_VERSION_MAPPER = {
 }
 
 KEYFRAME_TYPES_51 = {
-    1: Lmt.Vec3Frame12,  # LMTVec3 but problably not a real keyframe
+    1: Lmt.Vec3Frame12,  # LMTVec3 but tests didn't found it in re games
     2: Lmt.Vec3Frame12,
     3: Lmt.Vec3Frame16,
     4: Lmt.Quat3Frame,  # Lmt.Quatized16Vec3 for ver55+
@@ -73,206 +73,6 @@ KEYFRAME_TYPES = {
     51: KEYFRAME_TYPES_51,
     67: KEYFRAME_TYPES_67
 }
-
-
-class LMTKeyframeBounds:
-    def __init__(self, bound):
-        self.addin = bound.addin
-        self.offset = bound.offset
-        self.map = ["x", "y", "z", "w"]
-
-    def lerp3(self, fraction):
-        """fraction: imported vector keyframe"""
-        # Returns only x, y, z (as point3)
-        return Vector((
-            self.offset[0] + fraction.x * self.addin[0],
-            self.offset[1] + fraction.y * self.addin[1],
-            self.offset[2] + fraction.z * self.addin[2],
-            ))
-
-    def lerpq(self, fraction):
-        """fraction: imported quaternion keyframe"""
-        # Returns quaternion (x, y, z, w)
-        return Quaternion((
-            self.offset[3] + fraction.w * self.addin[3],
-            self.offset[0] + fraction.x * self.addin[0],
-            self.offset[1] + fraction.y * self.addin[1],
-            self.offset[2] + fraction.z * self.addin[2],
-        ))
-
-
-@blender_registry.register_import_function(app_id="re0", extension='lmt', file_category="ANIMATION")
-@blender_registry.register_import_function(app_id="re1", extension='lmt', file_category="ANIMATION")
-@blender_registry.register_import_function(app_id="re5", extension='lmt', file_category="ANIMATION")
-@blender_registry.register_import_function(app_id="re6", extension='lmt', file_category="ANIMATION")
-@blender_registry.register_import_function(app_id="rev1", extension='lmt', file_category="ANIMATION")
-@blender_registry.register_import_function(app_id="rev2", extension='lmt', file_category="ANIMATION")
-def load_lmt(file_list_item, context):
-    app_id = file_list_item.app_id
-    lmt_bytes = file_list_item.get_bytes()
-    lmt = Lmt(KaitaiStream(io.BytesIO(lmt_bytes)))
-    lmt._read()
-    lmt_ver = lmt.version
-    armature = context.scene.albam.import_options_lmt.armature
-    mapping = _create_bone_mapping(armature)
-
-    # DEBUG_BLOCK = 2
-    DEBUG_BLOCK = None
-    bl_object_name = file_list_item.display_name
-    bl_object = bpy.data.objects.new(bl_object_name, None)
-
-    for block_index, block in enumerate(lmt.block_offsets):
-        anim_object_name = f"{file_list_item.display_name}.{str(block_index).zfill(4)}"
-        anim_object = bpy.data.objects.new(anim_object_name, None)
-        anim_object.parent = bl_object
-        if block.offset == 0:
-            continue
-        if DEBUG_BLOCK is not None and DEBUG_BLOCK != block_index:
-            continue
-        armature.animation_data_create()
-        name = f"{armature.name}.{file_list_item.display_name}.{str(block_index).zfill(4)}"
-        action = bpy.data.actions.new(name)
-        action.use_fake_user = True
-
-        tracks = anim_object.albam_custom_properties.get_custom_properties_secondary_for_appid(app_id)[
-                "tracks"]
-        for track_index, track in enumerate(block.block_header.tracks):
-            # Custom attributes for a track
-            item = tracks.tracks.add()
-            item.copy_custom_properties_from(track)
-            item.raw_data = track.data
-            # print("Buffer type: ", track.buffer_type, "Usage:", USAGE[track.usage])
-            bounds = None
-            keyframes = LMTKeyFrames()
-            if lmt_ver > 51:
-                bounds_body = track.bounds
-                if bounds_body:
-                    b_item = item.track_bounds.add()
-                    b_item.copy_custom_properties_from(track.bounds)
-                    bounds = LMTKeyframeBounds(track.bounds)
-                    keyframes.bounds = bounds
-
-            bone_index = mapping.get(str(track.bone_index))
-
-            if bone_index is None and track.bone_index == ROOT_MOTION_BONE_ID:
-                bone_index = _get_or_create_root_motion_bone(armature, mapping)
-
-            elif bone_index is None and track.bone_index == ROOT_UNK_BONE_ID:
-                # Probably some kind of object tracker bone (weapon?)
-                # TODO: do something with this
-                continue
-            elif bone_index is None:
-                # TODO: better stats
-                print(f"bone_index not found!: [{track.bone_index}]")
-                continue
-            if track.bone_index in HACKY_BONE_INDICES_IK_FOOT:
-                bone_index = _get_or_create_ik_bone(armature, track.bone_index, bone_index, mapping)
-
-            track_type = USAGE[track.usage]
-            keyframes.track_type = USAGE[track.usage]
-            if track.len_data > 0:
-                keyframes.decode_framedata(lmt_ver, track.buffer_type, track.data)
-            else:
-                frame = None
-                rd = track.reference_data
-                if track_type == "location":
-                    frame = Vector((rd[0] / 100, rd[1] / 100, rd[2] / 100))
-                    print("default location ", frame)
-                else:
-                    frame = Quaternion((rd[3], rd[1], rd[2], rd[0]))
-                    print("default rotation_quaternion")
-                keyframes.decoded_frames.append(frame)
-            if not keyframes.decoded_frames:
-                continue
-
-            if track.usage == 4 or (track.usage == 1 and armature.data.bones[bone_index].parent is None):
-                keyframes.decoded_frames = _parent_space_to_local_translation(keyframes.decoded_frames, armature, bone_index)
-
-            group_name = str(bone_index)
-            group = action.groups.get(group_name) or action.groups.new(group_name)
-            data_path = f"pose.bones[\"{bone_index}\"].{track_type}"
-            # num_curv = len(decoded_frames[0])
-            num_curv = 4 if track_type == "rotation_quaternion" else 3
-            try:
-                curves = [action.fcurves.new(data_path=data_path, index=i) for i in range(num_curv)]
-                for c in curves:
-                    c.group = group
-            except RuntimeError as err:
-                print('unknown error:', err, "Block index: {0}, Track index:{1}".format(
-                    block_index, track_index))
-                continue
-            # for frame_index, frame_data in enumerate(decoded_frames):
-            for frame_index, frame_data in enumerate(keyframes.decoded_frames):
-                if frame_data is None:
-                    continue
-                for curve_idx, curve in enumerate(curves):
-                    curve.keyframe_points.add(1)
-                    curve.keyframe_points[-1].co = (frame_index + 1, frame_data[curve_idx])  # frame , value
-                    curve.keyframe_points[-1].interpolation = 'LINEAR'
-
-        # building custom attributes of lmt metadata
-        custom_properties = anim_object.albam_custom_properties.get_custom_properties_for_appid(
-            app_id)
-        custom_properties.copy_custom_properties_from(block.block_header)
-        custom_properties.action = action
-        if lmt_ver < 67:
-            col_events = anim_object.albam_custom_properties.get_custom_properties_secondary_for_appid(app_id)[
-                "col_events"]
-            col_events.copy_custom_properties_from(block.block_header.collision_events)
-            for attr_index, attribute in enumerate(block.block_header.collision_events.attributes):
-                item = col_events.attributes.add()
-                item.copy_custom_properties_from(attribute)
-
-            motion_se = anim_object.albam_custom_properties.get_custom_properties_secondary_for_appid(app_id)[
-                "motion_se"]
-            motion_se.copy_custom_properties_from(block.block_header.motion_sound_effects)
-            for attr_index, attribute in enumerate(block.block_header.motion_sound_effects.attributes):
-                item = motion_se.attributes.add()
-                item.copy_custom_properties_from(attribute)
-        else:
-            seq_infos = anim_object.albam_custom_properties.get_custom_properties_secondary_for_appid(app_id)[
-                "sequence_infos"]
-            # seq_info.copy_custom_properties_from(block.block_header.sequence_infos)
-            for s_index, s_info in enumerate(block.block_header.sequence_infos):
-                item = seq_infos.sequence_info.add()
-                item.copy_custom_properties_from(s_info)
-                for attr_index, s_attr in enumerate(s_info.attributes):
-                    a_item = item.attributes.add()
-                    a_item.copy_custom_properties_from(s_attr)
-
-            keyframe_infos = anim_object.albam_custom_properties.get_custom_properties_secondary_for_appid(app_id)[
-                "keyframe_infos"]
-            if len(block.block_header.key_infos) > 0:
-                for k_index, k_info in enumerate(block.block_header.key_infos):
-                    item = keyframe_infos.keyframe_info.add()
-                    item.copy_custom_properties_from(k_info)
-                    for kb_index, k_block in enumerate(k_info.keyframe_blocks):
-                        k_item = item.keyframe_blocks.add()
-                        k_item.copy_custom_properties_from(k_block)
-
-    bl_object.albam_asset.original_bytes = lmt_bytes
-    bl_object.albam_asset.app_id = app_id
-    bl_object.albam_asset.relative_path = file_list_item.relative_path
-    bl_object.albam_asset.extension = file_list_item.extension
-
-    exportable = context.scene.albam.exportable.file_list.add()
-    exportable.bl_object = bl_object
-
-    context.scene.albam.exportable.file_list.update()
-    return bl_object
-
-
-def _create_bone_mapping(armature_obj):
-    bone_names = {}
-    for b_idx, mapped_bone in enumerate(armature_obj.data.bones):
-        reference_bone_id = mapped_bone.get('mtfw.anim_retarget')  # TODO: better name
-        if reference_bone_id is None:
-            print(f"WARNING: {armature_obj.name}->{mapped_bone.name} doesn't contain a mapped bone")
-            continue
-        if reference_bone_id in bone_names:
-            print(f"WARNING: bone_id {b_idx} already mapped. TODO")
-        bone_names[reference_bone_id] = mapped_bone.name
-    return bone_names
 
 
 # Unused for now but maybe LMTQuadraticVector3 will need it
@@ -395,6 +195,212 @@ class LMTKeyFrames:
         return num / DIVIDER
 
 
+class LMTKeyframeBounds:
+    def __init__(self, bound):
+        self.addin = bound.addin
+        self.offset = bound.offset
+        self.map = ["x", "y", "z", "w"]
+
+    def lerp3(self, fraction):
+        """fraction: imported vector keyframe"""
+        # Returns only x, y, z (as point3)
+        return Vector((
+            self.offset[0] + fraction.x * self.addin[0],
+            self.offset[1] + fraction.y * self.addin[1],
+            self.offset[2] + fraction.z * self.addin[2],
+            ))
+
+    def lerpq(self, fraction):
+        """fraction: imported quaternion keyframe"""
+        # Returns quaternion (x, y, z, w)
+        return Quaternion((
+            self.offset[3] + fraction.w * self.addin[3],
+            self.offset[0] + fraction.x * self.addin[0],
+            self.offset[1] + fraction.y * self.addin[1],
+            self.offset[2] + fraction.z * self.addin[2],
+        ))
+
+
+@blender_registry.register_import_function(app_id="re0", extension='lmt', file_category="ANIMATION")
+@blender_registry.register_import_function(app_id="re1", extension='lmt', file_category="ANIMATION")
+@blender_registry.register_import_function(app_id="re5", extension='lmt', file_category="ANIMATION")
+@blender_registry.register_import_function(app_id="re6", extension='lmt', file_category="ANIMATION")
+@blender_registry.register_import_function(app_id="rev1", extension='lmt', file_category="ANIMATION")
+@blender_registry.register_import_function(app_id="rev2", extension='lmt', file_category="ANIMATION")
+def load_lmt(file_list_item, context):
+    app_id = file_list_item.app_id
+    lmt_bytes = file_list_item.get_bytes()
+    lmt = Lmt(KaitaiStream(io.BytesIO(lmt_bytes)))
+    lmt._read()
+    lmt_ver = lmt.version
+    armature = context.scene.albam.import_options_lmt.armature
+    mapping = _create_bone_mapping(armature)
+
+    # DEBUG_BLOCK = 2
+    DEBUG_BLOCK = None
+    bl_object_name = file_list_item.display_name
+    bl_object = bpy.data.objects.new(bl_object_name, None)
+
+    for block_index, block in enumerate(lmt.block_offsets):
+        anim_object_name = f"{file_list_item.display_name}.{str(block_index).zfill(4)}"
+        anim_object = bpy.data.objects.new(anim_object_name, None)
+        anim_object.parent = bl_object
+        if block.offset == 0:
+            continue
+        if DEBUG_BLOCK is not None and DEBUG_BLOCK != block_index:
+            continue
+        armature.animation_data_create()
+        name = f"{armature.name}.{file_list_item.display_name}.{str(block_index).zfill(4)}"
+        action = bpy.data.actions.new(name)
+        action.use_fake_user = True
+
+        tracks = anim_object.albam_custom_properties.get_custom_properties_secondary_for_appid(app_id)[
+                "tracks"]
+        for track_index, track in enumerate(block.block_header.tracks):
+            # Custom attributes for a track
+            item = tracks.tracks.add()
+            item.copy_custom_properties_from(track)
+            item.raw_data = track.data
+            # print("Buffer type: ", track.buffer_type, "Usage:", USAGE[track.usage])
+            bounds = None
+            keyframes = LMTKeyFrames()
+            if lmt_ver > 51:
+                bounds_body = track.bounds
+                if bounds_body:
+                    b_item = item.track_bounds.add()
+                    b_item.copy_custom_properties_from(track.bounds)
+                    bounds = LMTKeyframeBounds(track.bounds)
+                    keyframes.bounds = bounds
+
+            bone_index = mapping.get(str(track.bone_index))
+
+            if bone_index is None and track.bone_index == ROOT_MOTION_BONE_ID:
+                bone_index = _get_or_create_root_motion_bone(armature, mapping)
+
+            elif bone_index is None and track.bone_index == ROOT_UNK_BONE_ID:
+                # Probably some kind of object tracker bone (weapon?)
+                # TODO: do something with this
+                continue
+            elif bone_index is None:
+                # TODO: better stats
+                print(f"bone_index not found!: [{track.bone_index}]")
+                continue
+            if track.bone_index in HACKY_BONE_INDICES_IK_FOOT:
+                bone_index = _get_or_create_ik_bone(armature, track.bone_index, bone_index, mapping)
+
+            track_type = USAGE[track.usage]
+            keyframes.track_type = USAGE[track.usage]
+            if track.len_data > 0:
+                keyframes.decode_framedata(lmt_ver, track.buffer_type, track.data)
+            else:
+                frame = None
+                rd = track.reference_data
+                if track_type == "location":
+                    frame = Vector((rd[0] / 100, rd[1] / 100, rd[2] / 100))
+                    print("default location ", frame)
+                else:
+                    frame = Quaternion((rd[3], rd[1], rd[2], rd[0]))
+                    print("default rotation_quaternion")
+                keyframes.decoded_frames.append(frame)
+            if not keyframes.decoded_frames:
+                continue
+
+            if track.usage == 4 or (track.usage == 1 and armature.data.bones[bone_index].parent):
+                keyframes.decoded_frames = _parent_space_to_local_translation(
+                    keyframes.decoded_frames, armature, bone_index)
+
+            # temporary hack for the root bone
+            if track.usage == 1 and track.bone_index == 0 and armature.data.bones[bone_index].parent is None:
+                keyframes.decoded_frames = _parent_space_to_local_translation(
+                    keyframes.decoded_frames, armature, bone_index)
+
+            group_name = str(bone_index)
+            group = action.groups.get(group_name) or action.groups.new(group_name)
+            data_path = f"pose.bones[\"{bone_index}\"].{track_type}"
+            num_curv = 4 if track_type == "rotation_quaternion" else 3
+            try:
+                curves = [action.fcurves.new(data_path=data_path, index=i) for i in range(num_curv)]
+                for c in curves:
+                    c.group = group
+            except RuntimeError as err:
+                print('unknown error:', err, "Block index: {0}, Track index:{1}".format(
+                    block_index, track_index))
+                continue
+            # for frame_index, frame_data in enumerate(decoded_frames):
+            for frame_index, frame_data in enumerate(keyframes.decoded_frames):
+                if frame_data is None:
+                    continue
+                for curve_idx, curve in enumerate(curves):
+                    curve.keyframe_points.add(1)
+                    curve.keyframe_points[-1].co = (frame_index + 1, frame_data[curve_idx])  # frame , value
+                    curve.keyframe_points[-1].interpolation = 'LINEAR'
+
+        # building custom attributes of lmt metadata
+        custom_properties = anim_object.albam_custom_properties.get_custom_properties_for_appid(
+            app_id)
+        custom_properties.copy_custom_properties_from(block.block_header)
+        custom_properties.action = action
+        if lmt_ver < 67:
+            anim_props = anim_object.albam_custom_properties
+            col_events = anim_props.get_custom_properties_secondary_for_appid(app_id)[
+                "col_events"]
+            col_events.copy_custom_properties_from(block.block_header.collision_events)
+            for attr_index, attribute in enumerate(block.block_header.collision_events.attributes):
+                item = col_events.attributes.add()
+                item.copy_custom_properties_from(attribute)
+
+            motion_se = anim_props.get_custom_properties_secondary_for_appid(app_id)[
+                "motion_se"]
+            motion_se.copy_custom_properties_from(block.block_header.motion_sound_effects)
+            for attr_index, attribute in enumerate(block.block_header.motion_sound_effects.attributes):
+                item = motion_se.attributes.add()
+                item.copy_custom_properties_from(attribute)
+        else:
+            seq_infos = anim_props.get_custom_properties_secondary_for_appid(app_id)[
+                "sequence_infos"]
+            # seq_info.copy_custom_properties_from(block.block_header.sequence_infos)
+            for s_index, s_info in enumerate(block.block_header.sequence_infos):
+                item = seq_infos.sequence_info.add()
+                item.copy_custom_properties_from(s_info)
+                for attr_index, s_attr in enumerate(s_info.attributes):
+                    a_item = item.attributes.add()
+                    a_item.copy_custom_properties_from(s_attr)
+
+            keyframe_infos = anim_props.get_custom_properties_secondary_for_appid(app_id)[
+                "keyframe_infos"]
+            if len(block.block_header.key_infos) > 0:
+                for k_index, k_info in enumerate(block.block_header.key_infos):
+                    item = keyframe_infos.keyframe_info.add()
+                    item.copy_custom_properties_from(k_info)
+                    for kb_index, k_block in enumerate(k_info.keyframe_blocks):
+                        k_item = item.keyframe_blocks.add()
+                        k_item.copy_custom_properties_from(k_block)
+
+    bl_object.albam_asset.original_bytes = lmt_bytes
+    bl_object.albam_asset.app_id = app_id
+    bl_object.albam_asset.relative_path = file_list_item.relative_path
+    bl_object.albam_asset.extension = file_list_item.extension
+
+    exportable = context.scene.albam.exportable.file_list.add()
+    exportable.bl_object = bl_object
+
+    context.scene.albam.exportable.file_list.update()
+    return bl_object
+
+
+def _create_bone_mapping(armature_obj):
+    bone_names = {}
+    for b_idx, mapped_bone in enumerate(armature_obj.data.bones):
+        reference_bone_id = mapped_bone.get('mtfw.anim_retarget')  # TODO: better name
+        if reference_bone_id is None:
+            print(f"WARNING: {armature_obj.name}->{mapped_bone.name} doesn't contain a mapped bone")
+            continue
+        if reference_bone_id in bone_names:
+            print(f"WARNING: bone_id {b_idx} already mapped. TODO")
+        bone_names[reference_bone_id] = mapped_bone.name
+    return bone_names
+
+
 def _get_or_create_ik_bone(armature, track_bone_index, bone_index, mapping):
 
     if track_bone_index == HACKY_BONE_INDEX_IK_FOOT_RIGHT:
@@ -490,7 +496,7 @@ def _parent_space_to_local_rotation(decoded_frames, armature, bone_index):
             continue
         bone = armature.data.bones[bone_index]
         parent_matrix = bone.parent.matrix_local if bone.parent else Matrix.Identity(4)
-        bone_matrix = bone.matrix_local
+        # bone_matrix = bone.matrix_local
 
         parent_rot = parent_matrix.to_quaternion()
         bone_rot = frame  # frame (w, x, y, z)
