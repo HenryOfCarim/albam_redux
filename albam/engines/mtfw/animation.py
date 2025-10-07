@@ -177,15 +177,15 @@ def load_lmt(file_list_item, context):
                 rd = track.reference_data
                 if track_type == "location":
                     frame = Vector((rd[0] / 100, rd[1] / 100, rd[2] / 100))
-                    print("default location")
+                    print("default location ", frame)
                 else:
-                    frame = Quaternion((rd[0], rd[1], rd[2], rd[3]))
+                    frame = Quaternion((rd[3], rd[1], rd[2], rd[0]))
                     print("default rotation_quaternion")
                 keyframes.decoded_frames.append(frame)
             if not keyframes.decoded_frames:
                 continue
 
-            if track.usage == 4 or track.usage == 1 and armature.data.bones[bone_index].parent is None:
+            if track.usage == 4 or (track.usage == 1 and armature.data.bones[bone_index].parent is None):
                 keyframes.decoded_frames = _parent_space_to_local_translation(keyframes.decoded_frames, armature, bone_index)
 
             group_name = str(bone_index)
@@ -319,9 +319,10 @@ class LMTKeyFrames:
                 if key_type in BOUNDS_BUFF_TYPES and self.bounds:
                     dframe = self.bounds.lerpq(dframe)
             else:
-                dframe = self.to_vec3(frame, self.track_type)
                 if key_type in BOUNDS_BUFF_TYPES and self.bounds:
-                    dframe = self.bounds.lerp3(frame)
+                    dframe = self.to_vec3(self.bounds.lerp3(frame), self.track_type, key_type)
+                else:
+                    dframe = self.to_vec3(frame, self.track_type, key_type)
             self.decoded_frames.append(dframe)
             if duration:
                 self.decoded_frames.extend([None] * (duration - 1))
@@ -375,8 +376,12 @@ class LMTKeyFrames:
         kf.z = kf.z / 100
         return kf
 
-    def to_vec3(self, kf, track_type):
+    def to_vec3(self, kf, track_type, key_type):
         dkf = Vector((kf.x, kf.y, kf.z))
+        if key_type == 4:
+            dkf = dkf / 65535.0  # restore 16
+        elif key_type == 5 and self.version == 67:
+            dkf = dkf / 255.0  # restore 8
         if track_type == "location":
             dkf = dkf / 100
         return dkf
