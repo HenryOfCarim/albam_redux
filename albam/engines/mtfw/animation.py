@@ -89,6 +89,13 @@ class LMTUniKey:
         self.outtangent = [0.0, 0.0, 0.0]
 
 
+class ActionKey:
+    def __init__(self):
+        self.location = None  # Vector((0.0, 0.0, 0.0))
+        self.rotation_quaternion = None  # Quaternion((1.0, 0.0, 0.0, 0.0))
+        self.scale = None  # Vector((0.0, 0.0, 0.0))
+
+
 class LMTKeyFrames:
     def __init__(self):
         self.version = 0
@@ -169,12 +176,6 @@ class LMTKeyFrames:
 
     def to_quat(self, kf):
         return Quaternion((kf.w, kf.x, kf.y, kf.z))
-
-    def scale_vector(self, kf):
-        kf.x = kf.x / 100
-        kf.y = kf.y / 100
-        kf.z = kf.z / 100
-        return kf
 
     def to_vec3(self, kf, track_type, key_type):
         dkf = Vector((kf.x, kf.y, kf.z))
@@ -540,6 +541,49 @@ def _pre_serialize_offset(dst_lmt, num_anim_blocks):
     return block_offsets
 
 
+def _serialize_lmt(armature, tracks, app_id):
+    for bone_name, bone_tracks in tracks.items():
+        for frame, action_key in bone_tracks.items():
+            pass
+
+
+def _generate_track_from_action(armature, bl_objects, app_id):
+    mapping = _create_bone_mapping(armature)
+    mapping = {value: key for key, value in mapping.items()}
+    for bl_obj in bl_objects:
+        tracks = {}  # bone_name -> frame -> ActionKey
+        custom_props = bl_obj.albam_custom_properties.get_custom_properties_for_appid(app_id)
+        if custom_props.generate_new and custom_props.action:
+            action = custom_props.action
+            for fcurve in action.fcurves:
+                path = fcurve.data_path
+                index = fcurve.array_index
+                if path.startswith('pose.bones["'):
+                    bone_name = path.split('"')[1]
+                    if mapping.get(bone_name, None) is None:
+                        continue
+                    if tracks.get(bone_name) is None:
+                        tracks[bone_name] = {}
+                    for keyframe in fcurve.keyframe_points:
+                        frame = keyframe.co[0]
+                        if tracks[bone_name].get(frame) is None:
+                            tracks[bone_name][frame] = ActionKey()
+                        value = keyframe.co[1]
+                        if "location" in path:
+                            if getattr(tracks[bone_name][frame], "location", None) is None:
+                                tracks[bone_name][frame].location = Vector((0.0, 0.0, 0.0))
+                            tracks[bone_name][frame].location[index] = value
+                        elif "scale" in path:
+                            if getattr(tracks[bone_name][frame], "scale", None) is None:
+                                tracks[bone_name][frame].scale = Vector((1.0, 1.0, 1.0))
+                            tracks[bone_name][frame].scale[index] = value
+                        elif "rotation_quaternion" in path:
+                            if getattr(tracks[bone_name][frame], "rotation_quaternion", None) is None:
+                                tracks[bone_name][frame].rotation_quaternion = Quaternion((1.0, 0.0, 0.0, 0.0))
+                            tracks[bone_name][frame].rotation_quaternion[index] = value
+            return tracks
+
+
 def _calculate_offsets_lmt51(bl_objects, app_id):
     HEADER_SIZE = 8
     BLOCK_OFFSET_SIZE = 4
@@ -853,11 +897,13 @@ def export_lmt(bl_obj):
     vfiles = []
     print(f"Exporting LMT for {bl_obj.name} with app_id {app_id}")
     bl_objects = [c for c in bl_obj.children_recursive if c.type == "EMPTY"]
+    armature = bpy.context.scene.albam.import_options_lmt.armature
     dst_lmt = Lmt()
     dst_lmt.id_magic = b"LMT\x00"
     dst_lmt.version = APPID_VERSION_MAPPER[app_id]
     dst_lmt.num_block_offsets = len(bl_objects)
-    block_offsets = _pre_serialize_offset(dst_lmt, len(bl_objects))
+    block_offsets = []  # _pre_serialize_offset(dst_lmt, len(bl_objects))
+    anim_tracks = _generate_track_from_action(armature, bl_objects, app_id)
     lmt_offsets = _calculate_offsets(bl_objects, app_id)
     ofc_block = lmt_offsets["block_offsets"]
     final_size = lmt_offsets["final_size"]
@@ -1044,6 +1090,11 @@ class CustomPropsBase(bpy.types.PropertyGroup):
 @blender_registry.register_custom_properties_animation("lmt_51_anim", ("re5",))
 @blender_registry.register_blender_prop
 class LMT51AnimationCustomProperties(CustomPropsBase):
+    generate_new: bpy.props.BoolProperty(
+        name="Generate new animation",
+        default=False,
+        options=set(),
+    )
     ofs_frame: bpy.props.IntProperty(name="Offset", default=0, options=set())
     num_tracks: bpy.props.IntProperty(name="Number of Tracks", default=0, options=set())
     num_frames: bpy.props.IntProperty(name="Number of Frames", default=0, options=set())
@@ -1061,6 +1112,11 @@ class LMT51AnimationCustomProperties(CustomPropsBase):
 @blender_registry.register_custom_properties_animation("lmt_67_anim", ("re0", "re1", "re6", "rev1", "rev2", "dd",))
 @blender_registry.register_blender_prop
 class LMT67AnimationCustomProperties(CustomPropsBase):
+    generate_new: bpy.props.BoolProperty(
+        name="Generate new animation",
+        default=False,
+        options=set(),
+    )
     ofs_frame: bpy.props.IntProperty(name="Offset", default=0, options=set())
     num_tracks: bpy.props.IntProperty(name="Number of Tracks", default=0, options=set())
     num_frames: bpy.props.IntProperty(name="Number of Frames", default=0, options=set())
