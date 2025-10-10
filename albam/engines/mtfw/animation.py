@@ -103,6 +103,7 @@ class LMTKeyFrames:
         self.size = 0
         self.track_type = ""
         self.decoded_frames = []
+        self.encoded_frames = []
 
     def decode_framedata(self, version, key_type, data):
         kfcls = KEYFRAME_TYPES[version].get(key_type, None)
@@ -133,6 +134,37 @@ class LMTKeyFrames:
             self.decoded_frames.append(dframe)
             if duration:
                 self.decoded_frames.extend([None] * (duration - 1))
+
+    def encode_framedata(self, key_type, track):
+        if self.version == 51:
+            dst_track = Lmt.Track51(_parent=None, _root=None)
+            dst_track.buffer_type = key_type
+            dst_track.joint_type = 0
+            dst_raw_data = bytearray()
+
+            kfcls = KEYFRAME_TYPES[self.version].get(key_type, None)
+            if kfcls is None:
+                print("Unknown keyframe type:", key_type)
+                return
+            dst_track.usage = 0
+            last_frame = 0
+            for frame, value in track.items():
+                kf = kfcls()
+                if self.track_type == "location":
+                    value = value * 100
+                kf.w = getattr(value, "w", 1.0)
+                kf.x = value.x
+                kf.y = value.y
+                kf.z = value.z
+                duration = frame - last_frame
+                kf.duration = int(duration)
+                last_frame = frame
+                stream = KaitaiStream(io.BytesIO(bytearray(kf.size_)))
+                kf._check()
+                kf._write(stream)
+                dst_raw_data.extend(stream.to_byte_array())
+            dst_track.data = bytes(dst_raw_data)
+            self.encoded_frames.append(dst_track)
 
     def dequantaize(self, kf, type):
         dkf = Quaternion((0.0, 0.0, 0.0, 0.0))
@@ -541,10 +573,27 @@ def _pre_serialize_offset(dst_lmt, num_anim_blocks):
     return block_offsets
 
 
-def _serialize_lmt(armature, tracks, app_id):
+def _serialize_lmt_track(armature, tracks, app_id):
+    keyframes = LMTKeyFrames()
+    keyframes.version = APPID_VERSION_MAPPER[app_id]
     for bone_name, bone_tracks in tracks.items():
+        location = {}
+        rotation_quaternion = {}
+        scale = {}
         for frame, action_key in bone_tracks.items():
-            pass
+            if action_key.location is not None:
+                location[frame] = action_key.location
+            if action_key.rotation_quaternion is not None:
+                rotation_quaternion[frame] = action_key.rotation_quaternion
+            if action_key.scale is not None:
+                scale[frame] = action_key.scale
+        if location:
+            print(location)
+            keyframes.encode_framedata(2, location)
+        if rotation_quaternion:
+            print(rotation_quaternion)
+        if scale:
+            print(scale)
 
 
 def _generate_track_from_action(armature, bl_objects, app_id):
@@ -581,7 +630,7 @@ def _generate_track_from_action(armature, bl_objects, app_id):
                             if getattr(tracks[bone_name][frame], "rotation_quaternion", None) is None:
                                 tracks[bone_name][frame].rotation_quaternion = Quaternion((1.0, 0.0, 0.0, 0.0))
                             tracks[bone_name][frame].rotation_quaternion[index] = value
-            return tracks
+            _serialize_lmt_track(armature, tracks, app_id)
 
 
 def _calculate_offsets_lmt51(bl_objects, app_id):
