@@ -670,6 +670,8 @@ def _update_track_data(bl_obj, encoded_tracks, app_id):
         item = tracks_collection.add()
         item.buffer_type = et.buffer_type
         item.usage = et.usage
+        item.bone_index = int(et.bone_index)
+        item.weight = 1.0
         item.raw_data = et.data
 
 
