@@ -96,6 +96,14 @@ class ActionKey:
         self.scale = None  # Vector((0.0, 0.0, 0.0))
 
 
+class QuantizedKey:
+    def __init__(self):
+        self.w = 0
+        self.x = 0
+        self.y = 0
+        self.z = 0
+
+
 class LMTKeyFrames:
     def __init__(self):
         self.version = 0
@@ -135,29 +143,34 @@ class LMTKeyFrames:
             if duration:
                 self.decoded_frames.extend([None] * (duration - 1))
 
-    def encode_framedata(self, key_type, track):
+    def encode_framedata(self, key_type, bone_index, track, usage):
         if self.version == 51:
             dst_track = Lmt.Track51(_parent=None, _root=None)
             dst_track.buffer_type = key_type
+            dst_track.usage = usage
             dst_track.joint_type = 0
+            dst_track.bone_index = bone_index
             dst_raw_data = bytearray()
 
             kfcls = KEYFRAME_TYPES[self.version].get(key_type, None)
             if kfcls is None:
                 print("Unknown keyframe type:", key_type)
                 return
-            dst_track.usage = 0
             last_frame = 0
             for frame, value in track.items():
                 kf = kfcls()
                 if self.track_type == "location":
                     value = value * 100
-                kf.w = getattr(value, "w", 1.0)
+                elif self.track_type == "rotation_quaternion":
+                    value = self.quantaize(value, 6)
+                    kf.w = value.w
+                elif self.track_type == "scale":
+                    print("Scale")
                 kf.x = value.x
                 kf.y = value.y
                 kf.z = value.z
-                duration = frame - last_frame
-                kf.duration = int(duration)
+                duration = int(frame - last_frame)
+                kf.duration = duration
                 last_frame = frame
                 stream = KaitaiStream(io.BytesIO(bytearray(kf.size_)))
                 kf._check()
@@ -219,13 +232,52 @@ class LMTKeyFrames:
             dkf = dkf / 100
         return dkf
 
+    def quantaize(self, kf, type):
+        qkf = QuantizedKey()
+        if type == 6:
+            qkf.w = self.unclip_and_multiply(kf.w)
+            qkf.x = self.unclip_and_multiply(kf.x)
+            qkf.y = self.unclip_and_multiply(kf.y)
+            qkf.z = self.unclip_and_multiply(kf.z)
+        else:
+            print("Not implemented yet")
+        return qkf
+
     def clip_and_divide(self, num, qw=False):
-        RANGE_ALL = 2 ** 14 - 1
-        RANGE_SPLIT = 2 ** 13 - 1
+        """
+        Restore a sign from an usigned int value and convert to float
+        """
+        RANGE_ALL = 2 ** 14 - 1  # 16383
+        RANGE_SPLIT = 2 ** 13 - 1  # 8191
         DIVIDER = 4096 if not qw else 8192
         if num > RANGE_SPLIT:
             num -= RANGE_ALL
         return num / DIVIDER
+
+    def unclip_and_multiply(self, val, qw=False):
+        """
+        Inverse of clip_and_divide:
+        - value: float returned by clip_and_divide
+        - qw: same flag as in clip_and_divide
+        Returns integer "storage" value (0 .. RANGE_ALL) that was originally passed to clip_and_divide.
+        """
+        RANGE_ALL = 2 ** 14 - 1
+        RANGE_SPLIT = 2 ** 13 - 1
+        DIVIDER = 8192 if qw else 4096
+
+        signed = int(round(val * DIVIDER))
+        # Map negative signed back to unsigned storage representation
+        if signed < 0:
+            orig = signed + RANGE_ALL
+        else:
+            orig = signed
+        # Clamp
+        if orig < 0:
+            orig = 0
+        if orig > RANGE_ALL:
+            orig = RANGE_ALL
+
+        return int(orig)
 
 
 class LMTKeyframeBounds:
@@ -573,13 +625,16 @@ def _pre_serialize_offset(dst_lmt, num_anim_blocks):
     return block_offsets
 
 
-def _serialize_lmt_track(armature, tracks, app_id):
+def _serialize_lmt_track(armature, tracks, mapping, app_id):
     keyframes = LMTKeyFrames()
     keyframes.version = APPID_VERSION_MAPPER[app_id]
     for bone_name, bone_tracks in tracks.items():
         location = {}
         rotation_quaternion = {}
         scale = {}
+        bone = armature.data.bones.get(bone_name)
+        parent_bone = bone.parent
+        bone_index = mapping.get(bone_name)
         for frame, action_key in bone_tracks.items():
             if action_key.location is not None:
                 location[frame] = action_key.location
@@ -588,12 +643,34 @@ def _serialize_lmt_track(armature, tracks, app_id):
             if action_key.scale is not None:
                 scale[frame] = action_key.scale
         if location:
-            print(location)
-            keyframes.encode_framedata(2, location)
+            keyframes.track_type = "location"
+            location_sorted = {k: location[k] for k in sorted(location)}
+            usage = 1 if parent_bone else 4
+            keyframes.encode_framedata(2, bone_index, location_sorted, usage)
         if rotation_quaternion:
-            print(rotation_quaternion)
+            keyframes.track_type = "rotation_quaternion"
+            rotation_sorted = {k: rotation_quaternion[k] for k in sorted(rotation_quaternion)}
+            usage = 0 if parent_bone else 3
+            keyframes.encode_framedata(6, bone_index, rotation_sorted, usage)
         if scale:
-            print(scale)
+            keyframes.track_type = "scale"
+            scale_sorted = {k: scale[k] for k in sorted(scale)}
+            usage = 2 if parent_bone else 5
+            keyframes.encode_framedata(9, bone_index, scale_sorted, usage)
+    return keyframes.encoded_frames
+
+
+def _update_track_data(bl_obj, encoded_tracks, app_id):
+    custom_props = bl_obj.albam_custom_properties.get_custom_properties_for_appid(app_id)
+    second_props = bl_obj.albam_custom_properties.get_custom_properties_secondary_for_appid(app_id)
+    tracks_collection = getattr(second_props["tracks"], "tracks")
+    tracks_collection.clear()
+    # tracks = []
+    for et in encoded_tracks:
+        item = tracks_collection.add()
+        item.buffer_type = et.buffer_type
+        item.usage = et.usage
+        item.raw_data = et.data
 
 
 def _generate_track_from_action(armature, bl_objects, app_id):
@@ -630,7 +707,8 @@ def _generate_track_from_action(armature, bl_objects, app_id):
                             if getattr(tracks[bone_name][frame], "rotation_quaternion", None) is None:
                                 tracks[bone_name][frame].rotation_quaternion = Quaternion((1.0, 0.0, 0.0, 0.0))
                             tracks[bone_name][frame].rotation_quaternion[index] = value
-            _serialize_lmt_track(armature, tracks, app_id)
+            track_attrs = _serialize_lmt_track(armature, tracks, mapping, app_id)
+            _update_track_data(bl_obj, track_attrs, app_id)
 
 
 def _calculate_offsets_lmt51(bl_objects, app_id):
